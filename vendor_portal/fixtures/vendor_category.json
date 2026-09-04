@@ -1,0 +1,46 @@
+[
+ {
+  "category_name": "Packaging",
+  "default_payment_terms": null,
+  "description": null,
+  "docstatus": 0,
+  "doctype": "Vendor Category",
+  "is_active": 1,
+  "minimum_rating_threshold": 2.5,
+  "modified": "2026-09-04 21:25:06.269423",
+  "name": "Packaging"
+ },
+ {
+  "category_name": "IT Services",
+  "default_payment_terms": null,
+  "description": null,
+  "docstatus": 0,
+  "doctype": "Vendor Category",
+  "is_active": 1,
+  "minimum_rating_threshold": 3.5,
+  "modified": "2026-09-04 21:25:27.769069",
+  "name": "IT Services"
+ },
+ {
+  "category_name": "Office Supplies",
+  "default_payment_terms": null,
+  "description": null,
+  "docstatus": 0,
+  "doctype": "Vendor Category",
+  "is_active": 1,
+  "minimum_rating_threshold": 2.0,
+  "modified": "2026-09-04 21:25:43.941569",
+  "name": "Office Supplies"
+ },
+ {
+  "category_name": "Logistics",
+  "default_payment_terms": null,
+  "description": null,
+  "docstatus": 0,
+  "doctype": "Vendor Category",
+  "is_active": 1,
+  "minimum_rating_threshold": 3.0,
+  "modified": "2026-09-04 21:25:53.451320",
+  "name": "Logistics"
+ }
+]
