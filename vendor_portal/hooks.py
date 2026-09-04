@@ -12,7 +12,7 @@ use_json_request_body = True
 # Apps
 # ------------------
 
-# required_apps = []
+required_apps = ["erpnext"]
 
 # Each item in the list will be shown as an app in the apps page
 # add_to_apps_screen = [
@@ -304,3 +304,21 @@ require_type_annotated_api_methods = True
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
 
+fixtures = [
+	{
+		"dt": "Vendor Category",
+		"filters": [
+			[
+				"name",
+				"in",
+				[
+					"Raw Materials",
+					"Packaging",
+					"IT Services",
+					"Office Supplies",
+					"Logistics",
+				],
+			]
+		],
+	},
+]
