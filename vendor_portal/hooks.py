@@ -321,4 +321,25 @@ fixtures = [
 			]
 		],
 	},
+	{
+		# Filtered by explicit name rather than dt = Supplier: an unfiltered
+		# export would also capture ERPNext's regional fields and anything
+		# else customised on this bench.
+		"dt": "Custom Field",
+		"filters": [
+			[
+				"name",
+				"in",
+				[
+					"Supplier-custom_vendor_category",
+					"Supplier-custom_vendor_rating",
+					"Supplier-custom_total_rating_count",
+					"Supplier-custom_onboarding_reference",
+					"Supplier-custom_is_blacklisted",
+					"Supplier-custom_blacklist_reason",
+				],
+			]
+		],
+	},
 ]
+
