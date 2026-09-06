@@ -7,6 +7,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import now_datetime, validate_email_address
+from frappe.model.workflow import apply_workflow
 
 # 2-digit state code, 10-character PAN, 1 entity code, a literal Z, 1 check
 # digit. The Z is fixed by the GSTIN specification, not a placeholder.
@@ -326,58 +327,36 @@ class VendorOnboarding(Document):
 
 @frappe.whitelist()
 def approve_onboarding(onboarding_name: str) -> dict:
-	"""Approve an application and create the Supplier it describes.
+	"""Approve an application through the workflow.
+
+	Drives the workflow transition rather than writing the status directly, so
+	an API approval passes the same legality and role checks a reviewer using
+	the Actions menu passes, and triggers the same supplier creation.
 
 	Args:
 		onboarding_name: Name of the Vendor Onboarding record to approve.
 
 	Returns:
-		A dict with the onboarding name, its new status, and the name of the
-		Supplier created, or None for the supplier when automatic creation is
-		switched off.
+		A dict with the onboarding name, its new status, and the Supplier
+		created, or None when automatic creation is switched off.
 
 	Raises:
 		frappe.PermissionError: If the caller holds no deciding role.
-		frappe.ValidationError: If the application is not a submitted record
-			under review, or has already produced a Supplier.
+		frappe.ValidationError: If Approve is not a legal transition from the
+			application's current state.
 	"""
 	try:
 		_check_decision_permission()
 
 		doc = frappe.get_doc("Vendor Onboarding", onboarding_name)
-		_ensure_decidable(doc)
-
-		if doc.linked_supplier:
-			frappe.throw(
-				_("This application has already created supplier {0}.").format(
-					frappe.bold(doc.linked_supplier)
-				),
-				title=_("Already Approved"),
-			)
-
-		supplier_name = _create_supplier(doc)
-
-		doc.db_set(
-			{
-				"onboarding_status": "Approved",
-				"reviewed_by": frappe.session.user,
-				"review_date": now_datetime(),
-				"linked_supplier": supplier_name,
-			}
-		)
-
-		_notify_applicant(doc, approved=True)
+		apply_workflow(doc, "Approve")
 
 		return {
 			"onboarding": doc.name,
-			"status": "Approved",
-			"supplier": supplier_name,
+			"status": doc.onboarding_status,
+			"supplier": doc.linked_supplier,
 		}
 
-	except (frappe.ValidationError, frappe.PermissionError):
-		# Expected refusals. The caller has already been told why, and logging
-		# them would bury genuine failures under routine ones.
-		raise
 	except Exception:
 		frappe.log_error(title="Vendor onboarding approval failed")
 		raise
@@ -385,20 +364,22 @@ def approve_onboarding(onboarding_name: str) -> dict:
 
 @frappe.whitelist()
 def reject_onboarding(onboarding_name: str, reason: str) -> dict:
-	"""Reject an application and record why.
+	"""Reject an application through the workflow and record why.
+
+	The reason is written before the transition, because the document refuses
+	to enter Rejected without one.
 
 	Args:
 		onboarding_name: Name of the Vendor Onboarding record to reject.
-		reason: Why the application was refused. Required — a rejection with
-			no reason cannot be answered by the vendor.
+		reason: Why the application was refused.
 
 	Returns:
 		A dict with the onboarding name and its new status.
 
 	Raises:
 		frappe.PermissionError: If the caller holds no deciding role.
-		frappe.ValidationError: If the application is not a submitted record
-			under review, or no reason was given.
+		frappe.ValidationError: If no reason was given, or Reject is not a
+			legal transition from the current state.
 	"""
 	try:
 		_check_decision_permission()
@@ -410,24 +391,13 @@ def reject_onboarding(onboarding_name: str, reason: str) -> dict:
 			)
 
 		doc = frappe.get_doc("Vendor Onboarding", onboarding_name)
-		_ensure_decidable(doc)
+		doc.db_set("rejection_reason", reason.strip())
+		doc.reload()
 
-		doc.db_set(
-			{
-				"onboarding_status": "Rejected",
-				"rejection_reason": reason.strip(),
-				"reviewed_by": frappe.session.user,
-				"review_date": now_datetime(),
-			}
-		)
+		apply_workflow(doc, "Reject")
 
-		_notify_applicant(doc, approved=False)
+		return {"onboarding": doc.name, "status": doc.onboarding_status}
 
-		return {"onboarding": doc.name, "status": "Rejected"}
-
-	except (frappe.ValidationError, frappe.PermissionError):
-		# Expected refusals — see approve_onboarding.
-		raise
 	except Exception:
 		frappe.log_error(title="Vendor onboarding rejection failed")
 		raise
