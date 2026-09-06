@@ -181,6 +181,7 @@
    "label": "Review"
   },
   {
+   "allow_on_submit": 1,
    "default": "Draft",
    "fieldname": "onboarding_status",
    "fieldtype": "Select",
@@ -190,6 +191,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "reviewed_by",
    "fieldtype": "Link",
    "label": "Reviewed By",
@@ -197,6 +199,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "review_date",
    "fieldtype": "Datetime",
    "label": "Review Date",
@@ -207,6 +210,7 @@
    "fieldtype": "Column Break"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "linked_supplier",
    "fieldtype": "Link",
    "label": "Linked Supplier",
@@ -214,6 +218,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "rejection_reason",
    "fieldtype": "Small Text",
    "label": "Rejection Reason"
@@ -232,7 +237,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-09-06 14:50:14.154013",
+ "modified": "2026-09-07 00:13:37.645145",
  "modified_by": "Administrator",
  "module": "Vendor Portal",
  "name": "Vendor Onboarding",
