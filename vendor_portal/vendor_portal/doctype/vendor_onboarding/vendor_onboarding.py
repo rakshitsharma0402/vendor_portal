@@ -102,15 +102,71 @@ class VendorOnboarding(Document):
 		self.validate_duplicate_gst()
 
 
-	def on_submit(self):
-		"""Move a submitted application into review.
+	def on_update_after_submit(self):
+		"""React to a state change on a submitted application.
 
-		Submitting is the applicant handing the form over, so the status
-		follows automatically rather than waiting for a reviewer to set it.
-
-		Uses db_set because on_submit runs after the document is written.
+		The side effects of a decision live here rather than in the endpoints
+		because a workflow transition writes a field and nothing else. Hanging
+		them off the field means the Actions menu, the API and any other route
+		to Approved all produce the same result, instead of the menu quietly
+		producing an approved application with no supplier behind it.
 		"""
-		self.db_set("onboarding_status", "Under Review")
+		if self.onboarding_status == "Approved":
+			self.create_linked_supplier()
+		elif self.onboarding_status == "Rejected":
+			self.validate_rejection_reason()
+
+
+	def create_linked_supplier(self):
+		"""Create the Supplier this application describes, once.
+
+		Guarded on linked_supplier rather than on supplier name: two vendors
+		may legitimately share a name, but one application must never produce
+		two suppliers. The guard is load-bearing — this method runs on every
+		update to an approved record, not only on the transition into it.
+		"""
+		if self.linked_supplier:
+			return
+
+		supplier_name = _create_supplier(self)
+
+		if supplier_name:
+			self.db_set("linked_supplier", supplier_name)
+
+		self.db_set(
+			{
+				"reviewed_by": frappe.session.user,
+				"review_date": now_datetime(),
+			}
+		)
+
+		_notify_applicant(self, approved=True)
+
+
+	def validate_rejection_reason(self):
+		"""Require a reason on a rejected application.
+
+		Enforced on the document rather than only in the reject endpoint, so a
+		rejection made through the workflow Actions menu cannot skip it.
+
+		Raises:
+			frappe.ValidationError: If rejection_reason is empty.
+		"""
+		if not (self.rejection_reason or "").strip():
+			frappe.throw(
+				_("A reason is required to reject an application."),
+				title=_("Reason Missing"),
+			)
+
+		if not self.reviewed_by:
+			self.db_set(
+				{
+					"reviewed_by": frappe.session.user,
+					"review_date": now_datetime(),
+				}
+			)
+
+			_notify_applicant(self, approved=False)
 
 
 	def normalise_identifiers(self):
