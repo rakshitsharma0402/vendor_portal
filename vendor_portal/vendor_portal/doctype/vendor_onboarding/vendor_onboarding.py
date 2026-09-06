@@ -42,9 +42,6 @@ class VendorOnboarding(Document):
 		naming_series: DF.Literal["VOB-.YYYY.-.#####"]
 		onboarding_status: DF.Literal["Draft", "Under Review", "Approved", "Rejected"]
 		pan_number: DF.Data | None
-		parent: DF.Data
-		parentfield: DF.Data
-		parenttype: DF.Data
 		phone: DF.Data
 		pincode: DF.Data | None
 		rejection_reason: DF.SmallText | None
