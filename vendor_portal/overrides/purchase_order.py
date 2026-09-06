@@ -27,6 +27,7 @@ class CustomPurchaseOrder(PurchaseOrder):
 	resolution if a later rule needed to build on ERPNext's.
 	"""
 
+
 	def validate(self):
 		"""Apply ERPNext's validation, then the vendor standing gates.
 
@@ -47,6 +48,7 @@ class CustomPurchaseOrder(PurchaseOrder):
 			f"PO {self.name} validated for supplier {self.supplier}"
 		)
 
+
 	def on_submit(self):
 		"""Submit through ERPNext, then record how this order was priced.
 
@@ -56,6 +58,7 @@ class CustomPurchaseOrder(PurchaseOrder):
 		super().on_submit()
 
 		self.create_pricing_rating()
+
 
 	def on_cancel(self):
 		"""Cancel through ERPNext, then withdraw the ratings this order caused.
@@ -67,6 +70,7 @@ class CustomPurchaseOrder(PurchaseOrder):
 		super().on_cancel()
 
 		self.delete_linked_ratings()
+
 
 	def block_blacklisted_supplier(self):
 		"""Refuse orders to a blacklisted supplier.
@@ -88,6 +92,7 @@ class CustomPurchaseOrder(PurchaseOrder):
 			),
 			title=_("Supplier Blacklisted"),
 		)
+
 
 	def block_underrated_supplier(self):
 		"""Refuse orders to a supplier scoring below its category's threshold.
@@ -136,6 +141,7 @@ class CustomPurchaseOrder(PurchaseOrder):
 			title=_("Supplier Below Rating Threshold"),
 		)
 
+
 	def create_pricing_rating(self):
 		"""Score this order against what the supplier usually charges.
 
@@ -169,6 +175,7 @@ class CustomPurchaseOrder(PurchaseOrder):
 		# records; the rating is the system's observation, not theirs.
 		rating.insert(ignore_permissions=True)
 
+
 	def get_average_order_value(self) -> float | None:
 		"""Return the supplier's mean submitted order value, excluding this one.
 
@@ -192,3 +199,18 @@ class CustomPurchaseOrder(PurchaseOrder):
 		)
 
 		return result[0][0] if result and result[0][0] else None
+
+
+	def delete_linked_ratings(self):
+		"""Remove the rating logs this order produced.
+
+		Leaving them behind would keep a cancelled order influencing every
+		average computed for this supplier afterwards. Deletes nothing when
+		there is nothing to delete, so a re-cancellation is harmless.
+		"""
+		for name in frappe.get_all(
+			"Vendor Rating Log", filters={"purchase_order": self.name}, pluck="name"
+		):
+			frappe.delete_doc("Vendor Rating Log", name, ignore_permissions=True)
+
+            
