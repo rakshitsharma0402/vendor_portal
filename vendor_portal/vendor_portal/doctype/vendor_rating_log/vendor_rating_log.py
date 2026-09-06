@@ -1,8 +1,14 @@
 # Copyright (c) 2026, Rakshit Sharma and contributors
 # For license information, please see license.txt
 
-# import frappe
+import frappe
+from frappe import _
 from frappe.model.document import Document
+
+# Scores are on a 1-5 scale rather than 0-5: a zero would be indistinguishable
+# from an unset Float when the weighted average is computed downstream.
+MIN_SCORE = 1.0
+MAX_SCORE = 5.0
 
 
 class VendorRatingLog(Document):
