@@ -2,10 +2,11 @@
 # For license information, please see license.txt
 
 import re
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import validate_email_address
+from frappe.utils import now_datetime, validate_email_address
 
 # 2-digit state code, 10-character PAN, 1 entity code, a literal Z, 1 check
 # digit. The Z is fixed by the GSTIN specification, not a placeholder.
@@ -19,6 +20,11 @@ PAN_PATTERN = re.compile(r"^[A-Z]{5}[0-9]{4}[A-Z]{1}$")
 # is excluded so a failed application does not block a corrected resubmission.
 BLOCKING_STATUSES = ("Under Review", "Approved")
 
+# Roles permitted to decide on an application. A tuple rather than a single
+# name so the Vendor Manager role can be added without reworking the check.
+DECISION_ROLES = ("Purchase Manager",)
+
+
 class VendorOnboarding(Document):
 	"""A vendor's application to be traded with.
 
@@ -26,12 +32,13 @@ class VendorOnboarding(Document):
 	still being assembled, a submitted record is under review and locked
 	against edits, and only an approved record produces an ERPNext Supplier.
 
-	Validation, the approve and reject transitions, and the Supplier creation
-	they trigger are deliberately absent here — this doctype is schema only.
-	Status is written by those transitions, never typed by a user, which is
-	why every review field is read-only.
+	Validation is split deliberately. Format rules run on every save, because
+	a malformed identifier is wrong the moment it is typed. Completeness and
+	uniqueness rules run at submit, because a draft the applicant is still
+	assembling must remain saveable — a draft that cannot be saved cannot be
+	returned to.
 	"""
-	
+
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -39,6 +46,7 @@ class VendorOnboarding(Document):
 
 	if TYPE_CHECKING:
 		from frappe.types import DF
+
 		from vendor_portal.vendor_portal.doctype.vendor_document.vendor_document import VendorDocument
 
 		address_line_1: DF.Data
@@ -92,6 +100,17 @@ class VendorOnboarding(Document):
 		self.validate_gst_required()
 		self.validate_minimum_documents()
 		self.validate_duplicate_gst()
+
+
+	def on_submit(self):
+		"""Move a submitted application into review.
+
+		Submitting is the applicant handing the form over, so the status
+		follows automatically rather than waiting for a reviewer to set it.
+
+		Uses db_set because on_submit runs after the document is written.
+		"""
+		self.db_set("onboarding_status", "Under Review")
 
 
 	def normalise_identifiers(self):
@@ -248,4 +267,238 @@ class VendorOnboarding(Document):
 				title=_("Duplicate GST Number"),
 			)
 
-			
+
+@frappe.whitelist()
+def approve_onboarding(onboarding_name: str) -> dict:
+	"""Approve an application and create the Supplier it describes.
+
+	Args:
+		onboarding_name: Name of the Vendor Onboarding record to approve.
+
+	Returns:
+		A dict with the onboarding name, its new status, and the name of the
+		Supplier created, or None for the supplier when automatic creation is
+		switched off.
+
+	Raises:
+		frappe.PermissionError: If the caller holds no deciding role.
+		frappe.ValidationError: If the application is not a submitted record
+			under review, or has already produced a Supplier.
+	"""
+	try:
+		_check_decision_permission()
+
+		doc = frappe.get_doc("Vendor Onboarding", onboarding_name)
+		_ensure_decidable(doc)
+
+		if doc.linked_supplier:
+			frappe.throw(
+				_("This application has already created supplier {0}.").format(
+					frappe.bold(doc.linked_supplier)
+				),
+				title=_("Already Approved"),
+			)
+
+		supplier_name = _create_supplier(doc)
+
+		doc.db_set(
+			{
+				"onboarding_status": "Approved",
+				"reviewed_by": frappe.session.user,
+				"review_date": now_datetime(),
+				"linked_supplier": supplier_name,
+			}
+		)
+
+		_notify_applicant(doc, approved=True)
+
+		return {
+			"onboarding": doc.name,
+			"status": "Approved",
+			"supplier": supplier_name,
+		}
+
+	except (frappe.ValidationError, frappe.PermissionError):
+		# Expected refusals. The caller has already been told why, and logging
+		# them would bury genuine failures under routine ones.
+		raise
+	except Exception:
+		frappe.log_error(title="Vendor onboarding approval failed")
+		raise
+
+
+@frappe.whitelist()
+def reject_onboarding(onboarding_name: str, reason: str) -> dict:
+	"""Reject an application and record why.
+
+	Args:
+		onboarding_name: Name of the Vendor Onboarding record to reject.
+		reason: Why the application was refused. Required — a rejection with
+			no reason cannot be answered by the vendor.
+
+	Returns:
+		A dict with the onboarding name and its new status.
+
+	Raises:
+		frappe.PermissionError: If the caller holds no deciding role.
+		frappe.ValidationError: If the application is not a submitted record
+			under review, or no reason was given.
+	"""
+	try:
+		_check_decision_permission()
+
+		if not (reason or "").strip():
+			frappe.throw(
+				_("A reason is required to reject an application."),
+				title=_("Reason Missing"),
+			)
+
+		doc = frappe.get_doc("Vendor Onboarding", onboarding_name)
+		_ensure_decidable(doc)
+
+		doc.db_set(
+			{
+				"onboarding_status": "Rejected",
+				"rejection_reason": reason.strip(),
+				"reviewed_by": frappe.session.user,
+				"review_date": now_datetime(),
+			}
+		)
+
+		_notify_applicant(doc, approved=False)
+
+		return {"onboarding": doc.name, "status": "Rejected"}
+
+	except (frappe.ValidationError, frappe.PermissionError):
+		# Expected refusals — see approve_onboarding.
+		raise
+	except Exception:
+		frappe.log_error(title="Vendor onboarding rejection failed")
+		raise
+
+
+def _check_decision_permission():
+	"""Refuse callers who hold no deciding role.
+
+	Checked explicitly rather than left to DocType permissions: these are
+	whitelisted endpoints reachable over HTTP, and write access to the
+	onboarding record is not the same thing as authority to approve a vendor.
+
+	Raises:
+		frappe.PermissionError: If the caller holds none of DECISION_ROLES.
+	"""
+	if not set(DECISION_ROLES) & set(frappe.get_roles()):
+		frappe.throw(
+			_("Only a Purchase Manager can decide on vendor applications."),
+			frappe.PermissionError,
+			title=_("Not Permitted"),
+		)
+
+
+def _ensure_decidable(doc):
+	"""Confirm an application is still awaiting a decision.
+
+	Checks the docstatus as well as the status field: cancelling a submitted
+	application leaves onboarding_status untouched, so a cancelled record
+	would otherwise still read as Under Review and remain approvable.
+
+	Args:
+		doc: The Vendor Onboarding document.
+
+	Raises:
+		frappe.ValidationError: If the application is not submitted, or is not
+			in Under Review.
+	"""
+	if doc.docstatus != 1:
+		frappe.throw(
+			_("{0} is not a submitted application.").format(frappe.bold(doc.name)),
+			title=_("Not Submitted"),
+		)
+
+	if doc.onboarding_status != "Under Review":
+		frappe.throw(
+			_("Only applications under review can be decided. {0} is {1}.").format(
+				frappe.bold(doc.name), frappe.bold(doc.onboarding_status)
+			),
+			title=_("Not Under Review"),
+		)
+
+
+def _create_supplier(doc) -> str | None:
+	"""Create the ERPNext Supplier an approved application describes.
+
+	Returns None without creating anything when automatic creation is switched
+	off in Vendor Portal Settings, so a site that prefers to create suppliers
+	by hand can still use the approval flow.
+
+	Bank details are deliberately not copied: ERPNext holds supplier banking in
+	a separate Bank Account document, not on Supplier, so carrying them across
+	means creating a second record and is left to its own change.
+
+	Args:
+		doc: The approved Vendor Onboarding document.
+
+	Returns:
+		The new Supplier's name, or None when creation is switched off.
+	"""
+	settings = frappe.get_single("Vendor Portal Settings")
+
+	if not settings.auto_create_supplier:
+		return None
+
+	supplier = frappe.get_doc(
+		{
+			"doctype": "Supplier",
+			"supplier_name": doc.supplier_name,
+			"supplier_group": settings.default_supplier_group,
+			"vendor_category": doc.vendor_category,
+			"onboarding_reference": doc.name,
+		}
+	)
+
+	# The approving user needs authority over vendors, not over every field
+	# ERPNext validates on a Supplier. The decision has already been
+	# permission-checked above.
+	supplier.insert(ignore_permissions=True)
+
+	return supplier.name
+
+
+def _notify_applicant(doc, approved: bool):
+	"""Tell the applicant what was decided.
+
+	Queued rather than sent inline, and failures are swallowed: the decision
+	and the Supplier it created are already committed, and an unreachable mail
+	server must not roll back an approval that otherwise succeeded.
+
+	Args:
+		doc: The decided Vendor Onboarding document.
+		approved: True for an approval, False for a rejection.
+	"""
+	if not doc.email:
+		return
+
+	if approved:
+		subject = _("Your vendor application has been approved")
+		message = _("Your application {0} has been approved. We look forward to working with you.").format(
+			doc.name
+		)
+	else:
+		subject = _("Your vendor application was not approved")
+		message = _("Your application {0} was not approved. Reason: {1}").format(
+			doc.name, doc.rejection_reason
+		)
+
+	try:
+		frappe.sendmail(
+			recipients=[doc.email],
+			subject=subject,
+			message=message,
+			reference_doctype=doc.doctype,
+			reference_name=doc.name,
+			queue=True,
+		)
+	except Exception:
+		frappe.log_error(title="Vendor onboarding notification failed")
+
+		
