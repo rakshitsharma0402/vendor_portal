@@ -136,4 +136,59 @@ class CustomPurchaseOrder(PurchaseOrder):
 			title=_("Supplier Below Rating Threshold"),
 		)
 
+	def create_pricing_rating(self):
+		"""Score this order against what the supplier usually charges.
 
+		Cheaper than typical earns a better score, more expensive a worse one.
+		A first order has nothing to compare against and takes the neutral
+		score rather than being rewarded or punished for an average of one.
+		"""
+		average = self.get_average_order_value()
+
+		if not average:
+			score = SCORE_TYPICAL
+		elif self.grand_total < average * (1 - PRICING_BAND):
+			score = SCORE_CHEAPER
+		elif self.grand_total > average * (1 + PRICING_BAND):
+			score = SCORE_EXPENSIVE
+		else:
+			score = SCORE_TYPICAL
+
+		rating = frappe.get_doc(
+			{
+				"doctype": "Vendor Rating Log",
+				"supplier": self.supplier,
+				"purchase_order": self.name,
+				"rating_type": "Pricing",
+				"score": score,
+				"remarks": _("Automatic pricing score on order submission."),
+			}
+		)
+
+		# The buyer has authority over the order, not necessarily over rating
+		# records; the rating is the system's observation, not theirs.
+		rating.insert(ignore_permissions=True)
+
+	def get_average_order_value(self) -> float | None:
+		"""Return the supplier's mean submitted order value, excluding this one.
+
+		This order is excluded so the first PO for a supplier compares against
+		nothing and takes the neutral score by rule, rather than comparing
+		against itself and landing on neutral by accident.
+
+		Returns:
+			The mean grand_total of the supplier's other submitted orders, or
+			None when there are none.
+		"""
+		result = frappe.db.sql(
+			"""
+			SELECT AVG(grand_total)
+			FROM `tabPurchase Order`
+			WHERE supplier = %(supplier)s
+				AND docstatus = 1
+				AND name != %(name)s
+			""",
+			{"supplier": self.supplier, "name": self.name},
+		)
+
+		return result[0][0] if result and result[0][0] else None
