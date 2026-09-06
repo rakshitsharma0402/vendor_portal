@@ -341,5 +341,20 @@ fixtures = [
 			]
 		],
 	},
+    {
+		"dt": "Workflow",
+		"filters": [["name", "in", ["Vendor Onboarding Approval"]]],
+	},
+	{
+		# Standard states are exported alongside the custom one: re-importing
+		# an existing state is harmless, while a missing one breaks every
+		# transition that references it on a fresh site.
+		"dt": "Workflow State",
+		"filters": [["name", "in", ["Draft", "Under Review", "Approved", "Rejected"]]],
+	},
+	{
+		"dt": "Workflow Action Master",
+		"filters": [["name", "in", ["Submit for Review", "Approve", "Reject", "Resubmit"]]],
+	},
 ]
 
