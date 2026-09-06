@@ -80,6 +80,7 @@ class VendorOnboarding(Document):
 		self.validate_pan_number()
 		self.validate_email()
 
+
 	def before_submit(self):
 		"""Run the rules that only apply once the application is complete.
 
@@ -91,6 +92,7 @@ class VendorOnboarding(Document):
 		self.validate_gst_required()
 		self.validate_minimum_documents()
 		self.validate_duplicate_gst()
+
 
 	def normalise_identifiers(self):
 		"""Uppercase GST and PAN before they are checked or stored.
@@ -105,6 +107,7 @@ class VendorOnboarding(Document):
 
 		if self.pan_number:
 			self.pan_number = self.pan_number.strip().upper()
+
 
 	def validate_gst_number(self):
 		"""Reject a malformed GST number.
@@ -124,6 +127,7 @@ class VendorOnboarding(Document):
 				title=_("Invalid GST Number"),
 			)
 
+
 	def validate_pan_number(self):
 		"""Reject a malformed PAN number.
 
@@ -138,6 +142,7 @@ class VendorOnboarding(Document):
 				_("{0} is not a valid PAN number.").format(frappe.bold(self.pan_number)),
 				title=_("Invalid PAN Number"),
 			)
+
 
 	def validate_email(self):
 		"""Reject a malformed email address.
@@ -155,3 +160,92 @@ class VendorOnboarding(Document):
 
 		validate_email_address(self.email, throw=True)
 
+
+	def validate_gst_required(self):
+		"""Require a GST number when the site is configured to expect one.
+
+		Read from Vendor Portal Settings rather than hardcoded, so a site
+		trading with unregistered vendors can turn it off without a
+		deployment.
+
+		Raises:
+			frappe.ValidationError: If GST is required and none was given.
+		"""
+		if not frappe.db.get_single_value("Vendor Portal Settings", "require_gst_verification"):
+			return
+
+		if not self.gst_number:
+			frappe.throw(
+				_("A GST number is required to submit this application."),
+				title=_("GST Number Missing"),
+			)
+
+
+	def validate_minimum_documents(self):
+		"""Require the configured number of supporting documents at submit.
+
+		Enforced here rather than in validate() so a part-filled draft can
+		still be saved and returned to.
+
+		Raises:
+			frappe.ValidationError: If fewer document rows are attached than
+				Vendor Portal Settings requires.
+		"""
+		minimum = frappe.db.get_single_value("Vendor Portal Settings", "min_documents_required") or 0
+
+		attached = len(self.documents or [])
+
+		if attached < minimum:
+			frappe.throw(
+				_("At least {0} supporting documents are required. This application has {1}.").format(
+					minimum, attached
+				),
+				title=_("Missing Documents"),
+			)
+
+
+	def validate_duplicate_gst(self):
+		"""Reject a GST number already claimed by another live application.
+
+		Only Under Review and Approved applications block: a draft has not
+		been committed to, and a rejected one must not stop the vendor
+		resubmitting a corrected version.
+
+		The record's own name and the record it amends are excluded, so
+		amending a rejected application does not collide with itself.
+
+		Note: Suppliers created outside this portal are not covered. A plain
+		ERPNext v16 Supplier has no GST field, so there is nothing to compare
+		against — the portal can only enforce uniqueness across what it owns.
+
+		Raises:
+			frappe.ValidationError: If another live application holds this GST
+				number.
+		"""
+		if not self.gst_number:
+			return
+
+		excluded = [self.name]
+		if self.amended_from:
+			excluded.append(self.amended_from)
+
+		duplicate = frappe.db.get_value(
+			"Vendor Onboarding",
+			{
+				"gst_number": self.gst_number,
+				"onboarding_status": ("in", BLOCKING_STATUSES),
+				"docstatus": ("!=", 2),
+				"name": ("not in", excluded),
+			},
+			"name",
+		)
+
+		if duplicate:
+			frappe.throw(
+				_("GST number {0} is already used by application {1}.").format(
+					frappe.bold(self.gst_number), frappe.bold(duplicate)
+				),
+				title=_("Duplicate GST Number"),
+			)
+
+			
