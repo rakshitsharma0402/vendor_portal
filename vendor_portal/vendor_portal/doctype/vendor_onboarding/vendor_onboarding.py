@@ -47,7 +47,6 @@ class VendorOnboarding(Document):
 
 	if TYPE_CHECKING:
 		from frappe.types import DF
-
 		from vendor_portal.vendor_portal.doctype.vendor_document.vendor_document import VendorDocument
 
 		address_line_1: DF.Data
