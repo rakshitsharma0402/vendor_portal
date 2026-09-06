@@ -12,7 +12,6 @@ and nowhere else.
 """
 
 # The scale ratings are expressed in throughout the portal.
-RATING_SCALE_MIN = 1.0
 RATING_SCALE_MAX = 5.0
 
 

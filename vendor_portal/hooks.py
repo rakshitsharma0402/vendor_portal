@@ -237,7 +237,7 @@ required_apps = ["erpnext"]
 # 	"Task": "vendor_portal.task.get_dashboard_data"
 # }
 override_doctype_class = {
-	"Purchase Order": "vendor_portal/overrides/purchase_order.py.CustomPurchaseOrder"
+	"Purchase Order": "vendor_portal.overrides.purchase_order.CustomPurchaseOrder"
 }
 
 # exempt linked doctypes from being automatically cancelled

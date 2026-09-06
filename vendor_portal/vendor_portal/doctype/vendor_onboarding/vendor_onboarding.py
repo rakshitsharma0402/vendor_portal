@@ -420,35 +420,6 @@ def _check_decision_permission():
 		)
 
 
-def _ensure_decidable(doc):
-	"""Confirm an application is still awaiting a decision.
-
-	Checks the docstatus as well as the status field: cancelling a submitted
-	application leaves onboarding_status untouched, so a cancelled record
-	would otherwise still read as Under Review and remain approvable.
-
-	Args:
-		doc: The Vendor Onboarding document.
-
-	Raises:
-		frappe.ValidationError: If the application is not submitted, or is not
-			in Under Review.
-	"""
-	if doc.docstatus != 1:
-		frappe.throw(
-			_("{0} is not a submitted application.").format(frappe.bold(doc.name)),
-			title=_("Not Submitted"),
-		)
-
-	if doc.onboarding_status != "Under Review":
-		frappe.throw(
-			_("Only applications under review can be decided. {0} is {1}.").format(
-				frappe.bold(doc.name), frappe.bold(doc.onboarding_status)
-			),
-			title=_("Not Under Review"),
-		)
-
-
 def _create_supplier(doc) -> str | None:
 	"""Create the ERPNext Supplier an approved application describes.
 
@@ -476,8 +447,8 @@ def _create_supplier(doc) -> str | None:
 			"doctype": "Supplier",
 			"supplier_name": doc.supplier_name,
 			"supplier_group": settings.default_supplier_group,
-			"vendor_category": doc.vendor_category,
-			"onboarding_reference": doc.name,
+			"custom_vendor_category": doc.vendor_category,
+			"custom_onboarding_reference": doc.name,
 		}
 	)
 

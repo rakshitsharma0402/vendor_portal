@@ -5,7 +5,7 @@ import frappe
 from frappe import _
 from erpnext.buying.doctype.purchase_order.purchase_order import PurchaseOrder
 
-from vendor_portal.vendor_portal.utils import rating_field_to_scale
+from vendor_portal.utils import rating_field_to_scale
 
 # How far a PO's value may sit from the supplier's average before it counts as
 # cheap or expensive rather than typical.
@@ -79,7 +79,7 @@ class CustomPurchaseOrder(PurchaseOrder):
 			frappe.ValidationError: If the supplier is blacklisted.
 		"""
 		is_blacklisted, blacklist_reason = frappe.db.get_value(
-			"Supplier", self.supplier, ["is_blacklisted", "blacklist_reason"]
+			"Supplier", self.supplier, ["custom_is_blacklisted", "custom_blacklist_reason"]
 		)
 
 		if not is_blacklisted:
@@ -108,26 +108,26 @@ class CustomPurchaseOrder(PurchaseOrder):
 		supplier = frappe.db.get_value(
 			"Supplier",
 			self.supplier,
-			["vendor_category", "vendor_rating", "total_rating_count"],
+			["custom_vendor_category", "custom_vendor_rating", "custom_total_rating_count"],
 			as_dict=True,
 		)
 
-		if not supplier or not supplier.vendor_category:
+		if not supplier or not supplier.custom_vendor_category:
 			return
 
-		if not supplier.total_rating_count:
+		if not supplier.custom_total_rating_count:
 			return
 
 		threshold = frappe.db.get_value(
-			"Vendor Category", supplier.vendor_category, "minimum_rating_threshold"
+			"Vendor Category", supplier.custom_vendor_category, "minimum_rating_threshold"
 		)
 
 		if not threshold:
 			return
 
 		# The Rating field stores 0-1; the threshold is on the 1-5 scale.
-		rating = rating_field_to_scale(supplier.vendor_rating)
-
+		rating = rating_field_to_scale(supplier.custom_vendor_rating)
+		
 		if rating >= threshold:
 			return
 
@@ -136,7 +136,7 @@ class CustomPurchaseOrder(PurchaseOrder):
 				frappe.bold(self.supplier_name or self.supplier),
 				frappe.format_value(rating, {"fieldtype": "Float", "precision": 2}),
 				frappe.format_value(threshold, {"fieldtype": "Float", "precision": 2}),
-				supplier.vendor_category,
+				supplier.custom_vendor_category,
 			),
 			title=_("Supplier Below Rating Threshold"),
 		)
