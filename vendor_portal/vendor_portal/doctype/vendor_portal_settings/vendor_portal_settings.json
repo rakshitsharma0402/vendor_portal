@@ -1,0 +1,142 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "creation": "2026-09-06 15:45:20.637105",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "onboarding_section",
+  "auto_create_supplier",
+  "require_gst_verification",
+  "onboarding_cb",
+  "default_supplier_group",
+  "min_documents_required",
+  "weights_section",
+  "rating_weight_delivery",
+  "rating_weight_quality",
+  "weights_cb",
+  "rating_weight_pricing",
+  "rating_weight_communication",
+  "rating_behaviour_section",
+  "auto_rating_enabled",
+  "behaviour_cb",
+  "low_rating_threshold"
+ ],
+ "fields": [
+  {
+   "fieldname": "onboarding_section",
+   "fieldtype": "Section Break",
+   "label": "Onboarding"
+  },
+  {
+   "default": "1",
+   "fieldname": "auto_create_supplier",
+   "fieldtype": "Check",
+   "label": "Auto Create Supplier"
+  },
+  {
+   "default": "1",
+   "fieldname": "require_gst_verification",
+   "fieldtype": "Check",
+   "label": "Require GST Verification"
+  },
+  {
+   "fieldname": "onboarding_cb",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "default_supplier_group",
+   "fieldtype": "Link",
+   "label": "Default Supplier Group",
+   "options": "Supplier Group"
+  },
+  {
+   "default": "2",
+   "fieldname": "min_documents_required",
+   "fieldtype": "Int",
+   "label": "Minimum Documents Required"
+  },
+  {
+   "description": "Weights must sum to 1.0.",
+   "fieldname": "weights_section",
+   "fieldtype": "Section Break",
+   "label": "Rating Weights"
+  },
+  {
+   "default": "0.3",
+   "fieldname": "rating_weight_delivery",
+   "fieldtype": "Float",
+   "label": "Delivery"
+  },
+  {
+   "default": "0.3",
+   "fieldname": "rating_weight_quality",
+   "fieldtype": "Float",
+   "label": "Quality"
+  },
+  {
+   "fieldname": "weights_cb",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0.2",
+   "fieldname": "rating_weight_pricing",
+   "fieldtype": "Float",
+   "label": "Pricing"
+  },
+  {
+   "default": "0.2",
+   "fieldname": "rating_weight_communication",
+   "fieldtype": "Float",
+   "label": "Communication"
+  },
+  {
+   "fieldname": "rating_behaviour_section",
+   "fieldtype": "Section Break",
+   "label": "Rating Behaviour"
+  },
+  {
+   "default": "1",
+   "fieldname": "auto_rating_enabled",
+   "fieldtype": "Check",
+   "label": "Auto Rating Enabled"
+  },
+  {
+   "fieldname": "behaviour_cb",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "2.5",
+   "fieldname": "low_rating_threshold",
+   "fieldtype": "Float",
+   "label": "Low Rating Threshold"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-09-06 15:54:27.412274",
+ "modified_by": "Administrator",
+ "module": "Vendor Portal",
+ "name": "Vendor Portal Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
