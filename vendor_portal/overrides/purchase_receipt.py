@@ -143,3 +143,42 @@ def is_late(doc) -> bool:
 
 	return date_diff(getdate(doc.posting_date), promised) > LATE_DELIVERY_GRACE_DAYS
 
+
+def create_delivery_rating(doc):
+	"""Score this delivery on timeliness and completeness.
+
+	One rating per receipt rather than per item: a receipt with five short
+	lines is one poor delivery, not five, and scoring per line would let a
+	large receipt swamp the supplier's average.
+
+	Args:
+		doc: The submitted Purchase Receipt.
+	"""
+	short = bool(get_short_delivered_items(doc))
+	late = is_late(doc)
+
+	if late and short:
+		score = SCORE_LATE_SHORT
+	elif late:
+		score = SCORE_LATE_COMPLETE
+	elif short:
+		score = SCORE_ON_TIME_SHORT
+	else:
+		score = SCORE_ON_TIME_COMPLETE
+
+	rating = frappe.get_doc(
+		{
+			"doctype": "Vendor Rating Log",
+			"supplier": doc.supplier,
+			"purchase_receipt": doc.name,
+			"rating_type": "Delivery",
+			"score": score,
+			"remarks": _("Automatic delivery score on receipt submission."),
+		}
+	)
+
+	# The receiving clerk has authority over the receipt, not over rating
+	# records; the rating is the system's observation, not theirs.
+	rating.insert(ignore_permissions=True)
+
+    
