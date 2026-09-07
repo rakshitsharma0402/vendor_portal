@@ -21,9 +21,11 @@ PAN_PATTERN = re.compile(r"^[A-Z]{5}[0-9]{4}[A-Z]{1}$")
 # is excluded so a failed application does not block a corrected resubmission.
 BLOCKING_STATUSES = ("Under Review", "Approved")
 
-# Roles permitted to decide on an application. A tuple rather than a single
-# name so the Vendor Manager role can be added without reworking the check.
-DECISION_ROLES = ("Purchase Manager",)
+# Roles permitted to decide on an application. Purchase Manager carries
+# ERPNext's buying authority; Vendor Manager is this portal's own governance
+# role, and either is sufficient — vendor standing and purchasing authority
+# overlap in practice but are not the same job.
+DECISION_ROLES = ("Purchase Manager", "Vendor Manager")
 
 
 class VendorOnboarding(Document):
