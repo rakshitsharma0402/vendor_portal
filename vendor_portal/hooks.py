@@ -40,6 +40,8 @@ required_apps = ["erpnext"]
 # include js, css files in header of desk.html
 # app_include_css = "/assets/vendor_portal/css/vendor_portal.css"
 # app_include_js = "/assets/vendor_portal/js/vendor_portal.js"
+app_include_js = "vendor_portal.bundle.js"
+app_include_css = "vendor_portal.bundle.css"
 
 # include js, css files in header of web template
 # web_include_css = "/assets/vendor_portal/css/vendor_portal.css"
