@@ -1,7 +1,7 @@
 # Copyright (c) 2026, Rakshit Sharma and contributors
 # For license information, please see license.txt
 import frappe
-from frappe.utils import flt
+from frappe.utils import cint, flt
 
 """Shared helpers for the vendor portal.
 
