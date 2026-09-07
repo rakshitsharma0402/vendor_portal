@@ -14,6 +14,8 @@ and nowhere else.
 # The scale ratings are expressed in throughout the portal.
 RATING_SCALE_MAX = 5.0
 
+FILLED_STAR = "★"
+EMPTY_STAR = "☆"
 
 def rating_field_to_scale(value: float | None) -> float:
 	"""Convert a stored Rating field value to the 1-5 scale.
@@ -41,3 +43,35 @@ def scale_to_rating_field(score: float | None) -> float:
 	fraction = (score or 0) / RATING_SCALE_MAX
 
 	return max(0.0, min(1.0, fraction))
+
+
+def star_rating(value: float | None) -> str:
+	"""Render a stored rating as five star characters.
+
+	Takes the 0-1 fraction a Rating field holds rather than a 1-5 score,
+	because its callers are print formats reading a Rating field directly —
+	`{{ doc.custom_vendor_rating | star_rating }}` should work without the
+	template author converting first. A score already on the 1-5 scale can be
+	fed through scale_to_rating_field first.
+
+	Deliberately not inferring the scale from magnitude: a value of 1.0 is
+	ambiguous between a full five stars and a single star, and guessing wrong
+	misrepresents the worst vendors as the best.
+
+	Args:
+		value: The 0-1 fraction from a Rating field, or None.
+
+	Returns:
+		Five characters, filled stars followed by empty ones. An unset or zero
+		rating renders five empty stars rather than nothing, so a print format
+		keeps its layout whether or not the vendor has been rated.
+	"""
+	score = rating_field_to_scale(value)
+
+	# Clamped so a value outside 0-1 — from a bad import or a hand-edited
+	# field — still renders exactly five characters and does not break the
+	# surrounding layout.
+	filled = max(0, min(int(round(score)), int(RATING_SCALE_MAX)))
+
+	return FILLED_STAR * filled + EMPTY_STAR * (int(RATING_SCALE_MAX) - filled)
+
