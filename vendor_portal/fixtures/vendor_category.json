@@ -42,5 +42,16 @@
   "minimum_rating_threshold": 3.0,
   "modified": "2026-09-04 21:25:53.451320",
   "name": "Logistics"
+ },
+ {
+  "category_name": "Raw Materials",
+  "default_payment_terms": null,
+  "description": null,
+  "docstatus": 0,
+  "doctype": "Vendor Category",
+  "is_active": 1,
+  "minimum_rating_threshold": 3.0,
+  "modified": "2026-09-07 12:24:26.903550",
+  "name": "Raw Materials"
  }
 ]
