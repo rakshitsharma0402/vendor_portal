@@ -182,6 +182,13 @@ jinja = {
 # has_permission = {
 # 	"Event": "frappe.desk.doctype.event.event.has_permission",
 # }
+permission_query_conditions = {
+	"Vendor Onboarding": "vendor_portal.permissions.vendor_onboarding_query",
+}
+
+has_permission = {
+	"Vendor Rating Log": "vendor_portal.permissions.vendor_rating_log_permission",
+}
 
 # Document Events
 # ---------------
