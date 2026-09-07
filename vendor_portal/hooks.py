@@ -376,24 +376,5 @@ fixtures = [
 		"dt": "Role",
 		"filters": [["name", "in", ["Vendor Manager", "Purchase Team"]]],
 	},
-	{
-		# Filtered by the doctypes this app owns rather than by role: a role
-		# filter would silently drop a permission if a third role is ever
-		# granted access to these doctypes, and a fresh site would receive
-		# roles that permit nothing.
-		"dt": "Custom DocPerm",
-		"filters": [
-			[
-				"parent",
-				"in",
-				[
-					"Vendor Onboarding",
-					"Vendor Rating Log",
-					"Vendor Category",
-					"Vendor Portal Settings",
-				],
-			]
-		],
-	},
 ]
 
