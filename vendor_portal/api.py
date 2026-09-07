@@ -23,6 +23,10 @@ RECENT_RATINGS_LIMIT = 10
 MIN_SCORE = 1.0
 MAX_SCORE = 5.0
 
+from vendor_portal.vendor_portal.doctype.vendor_onboarding.vendor_onboarding import (
+	DECISION_ROLES,
+)
+
 @frappe.whitelist()
 def get_vendor_dashboard(supplier: str) -> dict:
 	"""Summarise a vendor's ordering, receiving, invoicing and rating history.
@@ -510,3 +514,70 @@ def get_onboarding_status_summary() -> dict:
 	except Exception:
 		frappe.log_error(title="Onboarding summary fetch failed")
 		raise
+
+
+	@frappe.whitelist()
+def set_supplier_blacklist(
+	supplier: str, blacklisted: bool | int, reason: str | None = None
+) -> dict:
+	"""Blacklist a supplier, or lift an existing blacklist.
+
+	An endpoint rather than a field write from the client, because refusing to
+	draw a button is not access control: anyone holding write permission on
+	Supplier could otherwise set the flag directly. The role is checked here,
+	where it cannot be walked around.
+
+	Args:
+		supplier: Name of the Supplier.
+		blacklisted: Truthy to blacklist, falsy to lift it.
+		reason: Why the vendor is being blacklisted. Required when
+			blacklisting; ignored when lifting.
+
+	Returns:
+		The supplier's name and its new blacklist state.
+
+	Raises:
+		frappe.PermissionError: If the caller holds no deciding role.
+		frappe.ValidationError: If the supplier is unknown, or a blacklist is
+			requested without a reason.
+	"""
+	try:
+		if not set(DECISION_ROLES) & set(frappe.get_roles()):
+			frappe.throw(
+				_("Only a Purchase Manager can blacklist a supplier."),
+				frappe.PermissionError,
+				title=_("Not Permitted"),
+			)
+
+		if not frappe.db.exists("Supplier", supplier):
+			frappe.throw(
+				_("Supplier {0} not found.").format(frappe.bold(supplier)),
+				title=_("Unknown Supplier"),
+			)
+
+		blacklisted = cint(blacklisted)
+
+		# A blacklist a buyer cannot interpret is one they will escalate.
+		# Lifting one needs no justification: the vendor is simply orderable
+		# again.
+		if blacklisted and not (reason or "").strip():
+			frappe.throw(
+				_("A reason is required to blacklist a supplier."),
+				title=_("Reason Missing"),
+			)
+
+		frappe.db.set_value(
+			"Supplier",
+			supplier,
+			{
+				"custom_is_blacklisted": blacklisted,
+				"custom_blacklist_reason": reason.strip() if blacklisted and reason else None,
+			},
+		)
+
+		return {"supplier": supplier, "blacklisted": blacklisted}
+
+	except Exception:
+		frappe.log_error(title="Supplier blacklist update failed")
+		raise
+
