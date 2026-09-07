@@ -104,6 +104,9 @@ app_include_css = "vendor_portal.bundle.css"
 # 	"methods": "vendor_portal.utils.jinja_methods",
 # 	"filters": "vendor_portal.utils.jinja_filters"
 # }
+jinja = {
+	"filters": ["vendor_portal.utils"],
+}
 
 # Installation
 # ------------
