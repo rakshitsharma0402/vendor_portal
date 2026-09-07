@@ -1,7 +1,5 @@
 # Copyright (c) 2026, Rakshit Sharma and contributors
 # For license information, please see license.txt
-import frappe
-from frappe.utils import cint, flt
 
 """Shared helpers for the vendor portal.
 
@@ -12,6 +10,9 @@ score in this app is expressed on the 1-5 scale people actually speak in.
 Rather than teach each consumer about the fraction, the translation lives here
 and nowhere else.
 """
+
+import frappe
+from frappe.utils import flt
 
 # The scale ratings are expressed in throughout the portal.
 RATING_SCALE_MAX = 5.0

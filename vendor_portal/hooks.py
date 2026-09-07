@@ -60,6 +60,7 @@ app_include_css = "vendor_portal.bundle.css"
 # include js in doctype views
 # doctype_js = {"doctype" : "public/js/doctype.js"}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
+doctype_list_js = {"Purchase Order": "public/js/purchase_order_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
 
@@ -356,7 +357,7 @@ fixtures = [
 			]
 		],
 	},
-    {
+	{
 		"dt": "Workflow",
 		"filters": [["name", "in", ["Vendor Onboarding Approval"]]],
 	},

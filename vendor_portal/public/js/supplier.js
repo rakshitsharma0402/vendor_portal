@@ -32,16 +32,19 @@ function render_vendor_stats(frm) {
 				return;
 			}
 
-			const section = frm.dashboard.add_section("", __("Vendor Performance"));
-
-			section.html(`
-				<div class="row">
+			// add_section's return value does not expose html() in v16, so the
+			// block is rendered through add_comment, which this form already
+			// uses successfully elsewhere.
+			frm.dashboard.add_comment(
+				`<div class="row">
 					${stat_column(__("Purchase Orders"), data.total_pos)}
 					${stat_column(__("Total Order Value"), format_currency(data.total_po_value))}
 					${stat_column(__("Average Rating"), rating_label(data))}
-					${stat_column(__("Total Ratings"), data.recent_ratings.length ? frm.doc.custom_total_rating_count || 0 : 0)}
-				</div>
-			`);
+					${stat_column(__("Total Ratings"), frm.doc.custom_total_rating_count || 0)}
+				</div>`,
+				"blue",
+				true
+			);
 		},
 	});
 }

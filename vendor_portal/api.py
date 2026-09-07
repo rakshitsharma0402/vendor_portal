@@ -10,7 +10,7 @@ what "total order value" means happens in one place.
 
 import frappe
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import cint, flt
 from vendor_portal.utils import (
 	RATING_TYPE_WEIGHTS,
 	rating_field_to_scale,
@@ -474,15 +474,19 @@ def get_onboarding_status_summary() -> dict:
 			# without this a cancelled review sits in the pending count
 			# forever.
 			filters={"docstatus": ("!=", 2)},
-			fields=["onboarding_status", "count(name) as status_count"],
-			group_by="onboarding_status",
+			# Counted in Python rather than by a SQL aggregate: v16's query
+			# engine rejects function calls in a string field list, and the
+			# dict form gives no predictable alias to read back. An onboarding
+			# pipeline is small enough that one column per application costs
+			# nothing, and get_all still applies row-level permissions.
+			pluck="onboarding_status",
 		)
 
 		counts = {status: 0 for status in ONBOARDING_STATUSES}
 
-		for row in rows:
-			if row.onboarding_status in counts:
-				counts[row.onboarding_status] = int(row.status_count or 0)
+		for status in rows:
+			if status in counts:
+				counts[status] += 1
 
 		recent = frappe.get_all(
 			"Vendor Onboarding",
@@ -516,10 +520,9 @@ def get_onboarding_status_summary() -> dict:
 		raise
 
 
-	@frappe.whitelist()
+@frappe.whitelist()
 def set_supplier_blacklist(
-	supplier: str, blacklisted: bool | int, reason: str | None = None
-) -> dict:
+	supplier: str, blacklisted: bool | int, reason: str | None = None) -> dict:
 	"""Blacklist a supplier, or lift an existing blacklist.
 
 	An endpoint rather than a field write from the client, because refusing to

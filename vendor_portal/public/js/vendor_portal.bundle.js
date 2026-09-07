@@ -7,7 +7,6 @@
 // entry, and each subsequent script adds a line below instead of touching
 // hooks.py again.
 
-import "./purchase_order_list";
 import "./purchase_invoice";
 import "./purchase_order";
 import "./supplier";
