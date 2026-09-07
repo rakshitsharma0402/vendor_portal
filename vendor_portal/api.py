@@ -10,11 +10,15 @@ what "total order value" means happens in one place.
 
 import frappe
 from frappe import _
+from frappe.utils import flt
+from vendor_portal.utils import RATING_TYPE_WEIGHTS, recalculate_vendor_rating
+
 
 # How many rating entries the dashboard carries back. Enough to show a trend
 # without turning a summary call into a full history fetch.
 RECENT_RATINGS_LIMIT = 10
-
+MIN_SCORE = 1.0
+MAX_SCORE = 5.0
 
 @frappe.whitelist()
 def get_vendor_dashboard(supplier: str) -> dict:
@@ -204,4 +208,85 @@ def _get_rating_summary(supplier: str) -> dict:
 		],
 		"recent_ratings": recent,
 	}
+
+@frappe.whitelist()
+def submit_vendor_rating(
+	supplier: str,
+	rating_type: str,
+	score: float,
+	remarks: str | None = None,
+	purchase_order: str | None = None,
+	purchase_receipt: str | None = None,
+) -> dict:
+	"""Record a rating for a supplier and update its overall score.
+
+	The recalculation runs inline rather than in a background job: a buyer who
+	rates a vendor and then opens the supplier list expects the new number to
+	be there, and the work is one grouped query against one supplier.
+
+	Args:
+		supplier: Name of the Supplier being rated.
+		rating_type: One of Delivery, Quality, Pricing or Communication.
+		score: The rating on the 1-5 scale.
+		remarks: Optional note explaining the score.
+		purchase_order: Optional order this rating arose from.
+		purchase_receipt: Optional receipt this rating arose from.
+
+	Returns:
+		The created log's name, the recalculated rating on the 1-5 scale, and
+		the number of ratings behind it.
+
+	Raises:
+		frappe.ValidationError: If the supplier is unknown, the rating type is
+			not recognised, or the score falls outside 1-5.
+	"""
+	try:
+		if not frappe.db.exists("Supplier", supplier):
+			frappe.throw(
+				_("Supplier {0} not found.").format(frappe.bold(supplier)),
+				title=_("Unknown Supplier"),
+			)
+
+		if rating_type not in RATING_TYPE_WEIGHTS:
+			frappe.throw(
+				_("{0} is not a valid rating type.").format(frappe.bold(rating_type)),
+				title=_("Invalid Rating Type"),
+			)
+
+		# Checked here as well as in the Vendor Rating Log controller so the
+		# caller gets a clear refusal before anything is created, rather than
+		# a validation error from a document they did not know existed.
+		score = flt(score)
+
+		if not MIN_SCORE <= score <= MAX_SCORE:
+			frappe.throw(
+				_("Score must be between 1 and 5."),
+				title=_("Invalid Score"),
+			)
+
+		log = frappe.get_doc(
+			{
+				"doctype": "Vendor Rating Log",
+				"supplier": supplier,
+				"rating_type": rating_type,
+				"score": score,
+				"remarks": remarks,
+				"purchase_order": purchase_order,
+				"purchase_receipt": purchase_receipt,
+			}
+		)
+
+		log.insert()
+
+		recalculated = recalculate_vendor_rating(supplier)
+
+		return {
+			"rating_log": log.name,
+			"rating": recalculated["rating"],
+			"rating_count": recalculated["rating_count"],
+		}
+
+	except Exception:
+		frappe.log_error(title="Vendor rating submission failed")
+		raise
 
