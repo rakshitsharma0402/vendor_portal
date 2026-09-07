@@ -11,8 +11,11 @@ what "total order value" means happens in one place.
 import frappe
 from frappe import _
 from frappe.utils import flt
-from vendor_portal.utils import RATING_TYPE_WEIGHTS, recalculate_vendor_rating
-
+from vendor_portal.utils import (
+	RATING_TYPE_WEIGHTS,
+	rating_field_to_scale,
+	recalculate_vendor_rating,
+)
 
 # How many rating entries the dashboard carries back. Enough to show a trend
 # without turning a summary call into a full history fetch.
@@ -289,4 +292,149 @@ def submit_vendor_rating(
 	except Exception:
 		frappe.log_error(title="Vendor rating submission failed")
 		raise
+
+
+@frappe.whitelist()
+def get_supplier_comparison(item_code: str, qty: float = 1) -> list[dict]:
+	"""Compare the suppliers who have supplied an item.
+
+	Args:
+		item_code: The item to compare suppliers for.
+		qty: Quantity being considered, used to project cost. Defaults to 1.
+
+	Returns:
+		One row per supplier who has supplied the item on a submitted order,
+		ordered by rating descending then average rate ascending — best
+		performer first, cheapest as the tiebreak. An item nobody has supplied
+		returns an empty list.
+
+	Raises:
+		frappe.ValidationError: If the item does not exist.
+	"""
+	try:
+		if not frappe.db.exists("Item", item_code):
+			frappe.throw(
+				_("Item {0} not found.").format(frappe.bold(item_code)),
+				title=_("Unknown Item"),
+			)
+
+		qty = flt(qty) or 1
+
+		rows = _get_item_purchase_history(item_code)
+
+		if not rows:
+			return []
+
+		delivery_scores = _get_delivery_scores([row.supplier for row in rows])
+
+		comparison = []
+
+		for row in rows:
+			last_rate = flt(row.last_rate)
+
+			comparison.append(
+				{
+					"supplier": row.supplier,
+					"supplier_name": row.supplier_name,
+					"last_rate": last_rate,
+					"avg_rate": flt(row.avg_rate),
+					"total_supplied_qty": flt(row.total_supplied_qty),
+					"estimated_cost": last_rate * qty,
+					# Stored as a 0-1 fraction; callers compare against
+					# thresholds expressed out of five.
+					"vendor_rating": rating_field_to_scale(row.custom_vendor_rating),
+					"delivery_score": delivery_scores.get(row.supplier),
+				}
+			)
+
+		return comparison
+
+	except Exception:
+		frappe.log_error(title="Supplier comparison failed")
+		raise
+
+
+def _get_item_purchase_history(item_code: str) -> list[dict]:
+	"""Summarise what each supplier has charged for an item.
+
+	Joins order items to their parent orders — child to parent in one
+	direction, so each order item contributes exactly one row. This is safe in
+	a way the dashboard's four-way join was not: there is no second one-to-many
+	relationship to multiply against.
+
+	The average rate is weighted by quantity rather than taken across order
+	lines. A plain mean would let a single one-unit sample at a high rate
+	outweigh a thousand-unit order at the real price, and misrepresent the
+	supplier permanently.
+
+	Blacklisted suppliers are excluded: the point of this comparison is
+	choosing who to order from, and orders to them are refused anyway.
+
+	Args:
+		item_code: The item to summarise.
+
+	Returns:
+		One row per supplier, ordered best-rated first, cheapest as tiebreak.
+	"""
+	return frappe.db.sql(
+		"""
+		SELECT
+			po.supplier,
+			po.supplier_name,
+			s.custom_vendor_rating,
+			SUM(poi.qty) AS total_supplied_qty,
+			SUM(poi.amount) / NULLIF(SUM(poi.qty), 0) AS avg_rate,
+			SUBSTRING_INDEX(
+				GROUP_CONCAT(poi.rate ORDER BY po.transaction_date DESC, po.creation DESC),
+				',', 1
+			) AS last_rate
+		FROM `tabPurchase Order Item` poi
+		INNER JOIN `tabPurchase Order` po ON po.name = poi.parent
+		INNER JOIN `tabSupplier` s ON s.name = po.supplier
+		WHERE poi.item_code = %(item_code)s
+			AND po.docstatus = 1
+			AND COALESCE(s.custom_is_blacklisted, 0) = 0
+		GROUP BY po.supplier, po.supplier_name, s.custom_vendor_rating
+		ORDER BY s.custom_vendor_rating DESC, avg_rate ASC
+		""",
+		{"item_code": item_code},
+		as_dict=True,
+	)
+
+
+def _get_delivery_scores(suppliers: list[str]) -> dict:
+	"""Average each supplier's Delivery ratings.
+
+	Fetched for every supplier in one grouped query rather than one call per
+	row: ten suppliers in a comparison should not mean ten round trips.
+
+	The score covers all of a supplier's delivery ratings, not only those for
+	the item being compared. Narrowing it would mean joining ratings through
+	receipts to receipt items, and most delivery ratings carry no receipt link
+	at all — the result would be mostly empty and read as though those vendors
+	had never delivered.
+
+	Args:
+		suppliers: Supplier names to score.
+
+	Returns:
+		Supplier name to mean Delivery score. Suppliers with no delivery
+		ratings are absent, so callers see null rather than a misleading zero.
+	"""
+	if not suppliers:
+		return {}
+
+	rows = frappe.db.sql(
+		"""
+		SELECT supplier, AVG(score) AS delivery_score
+		FROM `tabVendor Rating Log`
+		WHERE rating_type = 'Delivery'
+			AND supplier IN %(suppliers)s
+		GROUP BY supplier
+		""",
+		{"suppliers": tuple(suppliers)},
+		as_dict=True,
+	)
+
+	return {row.supplier: flt(row.delivery_score) for row in rows}
 
