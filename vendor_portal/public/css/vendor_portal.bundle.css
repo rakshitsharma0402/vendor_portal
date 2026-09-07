@@ -1,0 +1,30 @@
+/* Copyright (c) 2026, Rakshit Sharma and contributors */
+/* For license information, please see license.txt */
+
+/* Registered now so the hooks entry exists once. The rating badge and
+   blacklist banner styles that fill this file arrive with the forms that use
+   them in VP-2.1.1 and VP-2.1.2. */
+
+.vendor-portal-blacklist-banner {
+	background-color: var(--red-50);
+	border-left: 3px solid var(--red-500);
+	color: var(--red-700);
+	padding: 8px 12px;
+	margin-bottom: 10px;
+	border-radius: var(--border-radius-sm);
+	font-weight: 500;
+}
+
+.vendor-portal-rating-badge {
+	display: inline-block;
+	padding: 2px 8px;
+	border-radius: var(--border-radius-full);
+	font-size: var(--text-sm);
+	background-color: var(--gray-100);
+	color: var(--gray-700);
+}
+
+.vendor-portal-rating-badge--low {
+	background-color: var(--orange-100);
+	color: var(--orange-700);
+}
