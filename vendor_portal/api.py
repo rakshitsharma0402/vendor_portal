@@ -438,3 +438,75 @@ def _get_delivery_scores(suppliers: list[str]) -> dict:
 
 	return {row.supplier: flt(row.delivery_score) for row in rows}
 
+# How many applications the pipeline summary carries back. A widget shows a
+# handful; anyone wanting the full list opens the list view.
+RECENT_SUBMISSIONS_LIMIT = 10
+
+# Every status an application can hold, so the summary reports a zero rather
+# than omitting a bucket nobody currently occupies.
+ONBOARDING_STATUSES = ("Draft", "Under Review", "Approved", "Rejected")
+
+
+@frappe.whitelist()
+def get_onboarding_status_summary() -> dict:
+	"""Report the shape of the onboarding pipeline.
+
+	Counted through the ORM rather than raw SQL, deliberately: this is the one
+	endpoint in the portal whose answer depends on who is asking. Once
+	row-level permissions restrict the purchase team to their own submissions,
+	`frappe.get_all` applies those conditions and a hand-written query would
+	quietly report everyone's. A vendor's performance is objective; a queue is
+	not.
+
+	Returns:
+		A count per status, the total across them, and the most recent
+		applications. A site with no applications returns zeroes and an empty
+		list rather than nulls, so a widget can render without guarding.
+	"""
+	try:
+		rows = frappe.get_all(
+			"Vendor Onboarding",
+			# Cancelled applications keep whatever status they held, so
+			# without this a cancelled review sits in the pending count
+			# forever.
+			filters={"docstatus": ("!=", 2)},
+			fields=["onboarding_status", "count(name) as status_count"],
+			group_by="onboarding_status",
+		)
+
+		counts = {status: 0 for status in ONBOARDING_STATUSES}
+
+		for row in rows:
+			if row.onboarding_status in counts:
+				counts[row.onboarding_status] = int(row.status_count or 0)
+
+		recent = frappe.get_all(
+			"Vendor Onboarding",
+			filters={"docstatus": ("!=", 2)},
+			fields=[
+				"name",
+				"supplier_name",
+				"company_name",
+				"vendor_category",
+				"onboarding_status",
+				"creation",
+			],
+			order_by="creation desc",
+			limit=RECENT_SUBMISSIONS_LIMIT,
+		)
+
+		return {
+			# Draft is counted apart from pending: an application still being
+			# assembled is waiting on the applicant, not on a reviewer, and
+			# folding it in would overstate what a vendor manager has to do.
+			"total_draft": counts["Draft"],
+			"total_pending": counts["Under Review"],
+			"total_approved": counts["Approved"],
+			"total_rejected": counts["Rejected"],
+			"total_applications": sum(counts.values()),
+			"recent_submissions": recent,
+		}
+
+	except Exception:
+		frappe.log_error(title="Onboarding summary fetch failed")
+		raise
