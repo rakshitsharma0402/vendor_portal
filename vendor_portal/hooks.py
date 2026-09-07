@@ -188,6 +188,13 @@ required_apps = ["erpnext"]
 # 		"on_trash": "method"
 # 	}
 # }
+doc_events = {
+	"Purchase Receipt": {
+		"validate": "vendor_portal.overrides.purchase_receipt.validate",
+		"on_submit": "vendor_portal.overrides.purchase_receipt.on_submit",
+		"on_cancel": "vendor_portal.overrides.purchase_receipt.on_cancel",
+	}
+}
 
 # Scheduled Tasks
 # ---------------
