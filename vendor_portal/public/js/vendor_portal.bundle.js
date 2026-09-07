@@ -9,3 +9,4 @@
 
 import "./purchase_order_list";
 import "./purchase_invoice";
+import "./purchase_order";
