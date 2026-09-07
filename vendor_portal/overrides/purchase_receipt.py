@@ -61,6 +61,23 @@ def on_submit(doc, method=None):
 	create_delivery_rating(doc)
 
 
+def on_cancel(doc, method=None):
+	"""Withdraw the delivery rating a cancelled receipt produced.
+
+	A cancelled receipt describes a delivery that, as far as the system is
+	concerned, did not happen. Leaving its rating behind would keep it
+	influencing the supplier's average.
+
+	Args:
+		doc: The Purchase Receipt being cancelled.
+		method: The hook name, supplied by the framework and unused.
+	"""
+	for name in frappe.get_all(
+		"Vendor Rating Log", filters={"purchase_receipt": doc.name}, pluck="name"
+	):
+		frappe.delete_doc("Vendor Rating Log", name, ignore_permissions=True)
+
+
 def get_short_delivered_items(doc) -> list[str]:
 	"""Return the item codes received below the short-delivery threshold.
 
