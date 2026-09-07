@@ -51,7 +51,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-04 21:10:23.341102",
+ "modified": "2026-09-08 00:37:12.328622",
  "modified_by": "Administrator",
  "module": "Vendor Portal",
  "name": "Vendor Category",
@@ -69,6 +69,27 @@
    "role": "System Manager",
    "share": 1,
    "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Vendor Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Purchase Team",
+   "share": 1
   }
  ],
  "row_format": "Dynamic",

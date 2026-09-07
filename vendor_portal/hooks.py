@@ -372,5 +372,9 @@ fixtures = [
 		"dt": "Workflow Action Master",
 		"filters": [["name", "in", ["Submit for Review", "Approve", "Reject", "Resubmit"]]],
 	},
+    	{
+		"dt": "Role",
+		"filters": [["name", "in", ["Vendor Manager", "Purchase Team"]]],
+	},
 ]
 
