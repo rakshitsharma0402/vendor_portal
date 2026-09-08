@@ -764,10 +764,10 @@ def _report_import(created: list[str], failed: list[tuple], requested_by: str):
 		failed: Line number and reason for each row that did not import.
 		requested_by: Who to tell.
 	"""
-	lines = [f"Created {len(created)} draft applications."]
+	lines = [f"Created {len(created)} draft application{'' if len(created) == 1 else 's'}."]
 
 	if failed:
-		lines.append(f"\n{len(failed)} rows failed:")
+		lines.append(f"\n{len(failed)} row{'' if len(failed) == 1 else 's'} failed:")
 		lines.extend(f"  Line {line}: {reason}" for line, reason in failed)
 
 	message = "\n".join(lines)
