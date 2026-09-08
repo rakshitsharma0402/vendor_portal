@@ -12,7 +12,7 @@ import frappe
 import csv
 import io
 from frappe import _
-from frappe.utils import cint, flt
+from frappe.utils import add_months, cint, flt, today
 from vendor_portal.utils import (
 	RATING_TYPE_WEIGHTS,
 	rating_field_to_scale,
@@ -787,3 +787,176 @@ def _report_import(created: list[str], failed: list[tuple], requested_by: str):
 			title="Bulk vendor import notification failed",
 			message=frappe.get_traceback(),
 		)
+
+
+# Rating bands for the distribution chart, as (label, lower, upper). The top
+# band is closed at both ends so a supplier rated exactly 5 has somewhere to
+# land rather than falling out of the histogram.
+RATING_BANDS = (
+	("1 – 2", 1.0, 2.0),
+	("2 – 3", 2.0, 3.0),
+	("3 – 4", 3.0, 4.0),
+	("4 – 5", 4.0, 5.0),
+)
+
+DELIVERY_TREND_MONTHS = 12
+
+
+@frappe.whitelist()
+def get_dashboard_data() -> dict:
+	"""Return every dataset the analytics page draws.
+
+	One call rather than four. A dashboard asks a single question — how are
+	our vendors doing — and answering it in four requests means the page
+	renders in stages and pays the round trip four times.
+
+	Returns:
+		Four datasets, each a list of labels and values ready to plot. Empty
+		lists where there is nothing to show, so the page can say so rather
+		than drawing an empty chart.
+	"""
+	try:
+		return {
+			"rating_distribution": _get_rating_distribution(),
+			"onboarding_pipeline": _get_onboarding_pipeline(),
+			"category_spend": _get_category_spend(),
+			"delivery_trend": _get_delivery_trend(),
+		}
+
+	except Exception:
+		frappe.log_error(
+			title="Dashboard data fetch failed",
+			message=frappe.get_traceback(),
+		)
+		raise
+
+
+def _get_rating_distribution() -> dict:
+	"""Count rated suppliers falling in each rating band.
+
+	Unrated suppliers are excluded rather than counted in the lowest band: a
+	vendor nobody has scored is not a poorly performing one, and putting them
+	in the 1-2 bucket would make a new site look like a disaster.
+
+	Returns:
+		Band labels and the number of suppliers in each.
+	"""
+	suppliers = frappe.db.sql_list(
+		"""
+		SELECT custom_vendor_rating
+		FROM `tabSupplier`
+		WHERE COALESCE(disabled, 0) = 0
+			AND COALESCE(custom_total_rating_count, 0) > 0
+		"""
+	)
+
+	if not suppliers:
+		return {"labels": [], "values": []}
+
+	counts = [0] * len(RATING_BANDS)
+
+	for stored in suppliers:
+		rating = rating_field_to_scale(stored)
+
+		for index, (_label, lower, upper) in enumerate(RATING_BANDS):
+			# The top band takes its upper bound inclusively so a supplier at
+			# exactly five is counted rather than dropped.
+			is_top = index == len(RATING_BANDS) - 1
+
+			if lower <= rating < upper or (is_top and rating == upper):
+				counts[index] += 1
+				break
+
+	return {
+		"labels": [label for label, _lower, _upper in RATING_BANDS],
+		"values": counts,
+	}
+
+
+def _get_onboarding_pipeline() -> dict:
+	"""Count applications by status.
+
+	Returns:
+		Status labels and counts, every status present even at zero.
+	"""
+	rows = frappe.db.sql(
+		"""
+		SELECT onboarding_status, COUNT(*) AS status_count
+		FROM `tabVendor Onboarding`
+		WHERE docstatus != 2
+		GROUP BY onboarding_status
+		""",
+		as_dict=True,
+	)
+
+	counts = {status: 0 for status in ONBOARDING_STATUSES}
+
+	for row in rows:
+		if row.onboarding_status in counts:
+			counts[row.onboarding_status] = int(row.status_count or 0)
+
+	if not sum(counts.values()):
+		return {"labels": [], "values": []}
+
+	return {"labels": list(counts.keys()), "values": list(counts.values())}
+
+
+def _get_category_spend() -> dict:
+	"""Total submitted purchase order value by vendor category.
+
+	Aggregated here rather than by calling the category report: that report
+	returns columns and rows shaped for a grid, and reshaping them in
+	JavaScript is worse than a small query. Known duplication, deliberate.
+
+	Returns:
+		Category labels and their spend, highest first.
+	"""
+	rows = frappe.db.sql(
+		"""
+		SELECT s.custom_vendor_category AS category,
+			COALESCE(SUM(po.base_grand_total), 0) AS spend
+		FROM `tabPurchase Order` po
+		INNER JOIN `tabSupplier` s ON s.name = po.supplier
+		WHERE po.docstatus = 1
+			AND COALESCE(s.custom_vendor_category, '') != ''
+		GROUP BY s.custom_vendor_category
+		HAVING spend > 0
+		ORDER BY spend DESC
+		""",
+		as_dict=True,
+	)
+
+	return {
+		"labels": [row.category for row in rows],
+		"values": [flt(row.spend) for row in rows],
+	}
+
+
+def _get_delivery_trend() -> dict:
+	"""Average delivery score by month over the last year.
+
+	Monthly rather than weekly: on a site with a handful of receipts a weekly
+	line is mostly noise, and twelve points is enough to see a direction.
+
+	Returns:
+		Month labels and the mean delivery score in each, oldest first.
+	"""
+	rows = frappe.db.sql(
+		"""
+		SELECT DATE_FORMAT(rating_date, '%%b %%Y') AS month_label,
+			DATE_FORMAT(rating_date, '%%Y-%%m') AS month_key,
+			AVG(score) AS average_score
+		FROM `tabVendor Rating Log`
+		WHERE rating_type = 'Delivery'
+			AND rating_date >= %(from_date)s
+		GROUP BY month_key, month_label
+		ORDER BY month_key ASC
+		""",
+		{"from_date": add_months(today(), -DELIVERY_TREND_MONTHS)},
+		as_dict=True,
+	)
+
+	return {
+		"labels": [row.month_label for row in rows],
+		"values": [round(flt(row.average_score), 2) for row in rows],
+	}
