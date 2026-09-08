@@ -1,0 +1,60 @@
+{% extends "templates/web.html" %}
+
+{% block page_content %}
+<div class="container" style="max-width: 560px; margin-top: 32px;">
+	<h2>{{ _("Check your application") }}</h2>
+	<p class="text-muted">
+		{{ _("Enter the reference you received and the email you applied with.") }}
+	</p>
+
+	<form id="vp-status-form">
+		<div class="form-group">
+			<label>{{ _("Application Reference") }}</label>
+			<input type="text" class="form-control" name="application" required
+				placeholder="VOB-2026-00001">
+		</div>
+
+		<div class="form-group">
+			<label>{{ _("Email") }}</label>
+			<input type="email" class="form-control" name="email" required>
+		</div>
+
+		<button type="submit" class="btn btn-primary">{{ _("Check status") }}</button>
+	</form>
+
+	<div id="vp-status-result" style="display: none; margin-top: 24px;" class="alert alert-info"></div>
+</div>
+
+<script>
+	document.getElementById("vp-status-form").addEventListener("submit", function (event) {
+		event.preventDefault();
+
+		const form = event.target;
+		const data = new FormData(form);
+
+		frappe.call({
+			method: "vendor_portal.www.vendor_status.check_status",
+			args: {
+				application: data.get("application"),
+				email: data.get("email"),
+			},
+			callback: function (response) {
+				if (!response.message) {
+					return;
+				}
+
+				const result = document.getElementById("vp-status-result");
+
+				result.innerHTML =
+					"<b>" + response.message.application + "</b><br>" +
+					"{{ _('Status') }}: " + response.message.status + "<br>" +
+					"{{ _('Category') }}: " + (response.message.vendor_category || "—") + "<br>" +
+					"{{ _('Submitted') }}: " + response.message.submitted_on;
+
+				result.style.display = "block";
+			},
+		});
+	});
+</script>
+{% endblock %}
+
