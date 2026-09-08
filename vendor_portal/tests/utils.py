@@ -54,7 +54,7 @@ def make_onboarding(**overrides) -> "frappe.Document":
 
 	values = {
 		"doctype": "Vendor Onboarding",
-		"supplier_name": "Test Applicant",
+		"supplier_name": f"Test Applicant {frappe.generate_hash(length=6)}",
 		"company_name": "Test Applicant Ltd",
 		"email": "applicant@example.com",
 		"phone": "9999900000",
