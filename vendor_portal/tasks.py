@@ -14,7 +14,7 @@ from frappe import _
 from frappe.utils import flt
 
 from vendor_portal.utils import rating_field_to_scale, recalculate_vendor_rating
-
+from vendor_portal.overrides.purchase_receipt import create_delivery_rating
 
 def recalculate_all_vendor_ratings():
 	"""Reconcile every rated supplier's score with its rating log.
@@ -167,5 +167,66 @@ def _get_vendor_manager_emails() -> list[str]:
 			AND u.name NOT IN ('Administrator', 'Guest')
 		""",
 		{"role": "Vendor Manager"},
+	)
+
+
+# How many receipts one run will rate. A site with years of unrated history
+# should catch up over several runs rather than block the scheduler on the
+# first one.
+DELIVERY_BATCH_SIZE = 200
+
+
+def rate_pending_deliveries():
+	"""Give a delivery rating to submitted receipts that carry none.
+
+	The receipt hook rates on submission, so in normal operation this finds
+	nothing. It exists for the receipts the hook never saw: submitted while
+	the scheduler or a worker was down, imported from elsewhere, or created
+	before the rule existed.
+
+	No time window is applied. The spec suggests looking at the last two
+	hours, but an hourly job with a two-hour lookback only re-covers what it
+	already did, while a receipt older than that stays unrated forever — which
+	is precisely the case this job is for. The existence of a rating is the
+	only filter that matters.
+	"""
+	for name in _get_unrated_receipts():
+		try:
+			receipt = frappe.get_doc("Purchase Receipt", name)
+
+			create_delivery_rating(receipt)
+
+			frappe.db.commit()
+
+		except Exception:
+			frappe.log_error(
+				title="Delivery rating backfill failed",
+				message=f"Purchase Receipt: {name}\n\n{frappe.get_traceback()}",
+			)
+
+
+def _get_unrated_receipts() -> list[str]:
+	"""Return submitted receipts with no delivery rating against them.
+
+	Capped rather than exhaustive: the job runs hourly, so a backlog clears
+	over a few runs without any single run holding the worker for minutes.
+
+	Returns:
+		Purchase Receipt names, oldest first so a backlog is worked through in
+		the order it accumulated.
+	"""
+	return frappe.db.sql_list(
+		"""
+		SELECT pr.name
+		FROM `tabPurchase Receipt` pr
+		LEFT JOIN `tabVendor Rating Log` vrl
+			ON vrl.purchase_receipt = pr.name
+			AND vrl.rating_type = 'Delivery'
+		WHERE pr.docstatus = 1
+			AND vrl.name IS NULL
+		ORDER BY pr.posting_date ASC, pr.creation ASC
+		LIMIT %(limit)s
+		""",
+		{"limit": DELIVERY_BATCH_SIZE},
 	)
 
