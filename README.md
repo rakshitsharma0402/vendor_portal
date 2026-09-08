@@ -28,6 +28,10 @@ log those scores live in.
 **Reporting.** Two script reports, a purchase order print format carrying the vendor's standing,
 and an analytics dashboard.
 
+**Self-service.** Vendors apply at `/vendor-register` without a Desk account and check their
+application at `/vendor-status`. Neither route grants Guest any DocType permission — both go
+through whitelisted endpoints that build the document server-side from an allowlist of fields.
+
 ---
 
 ## Setup
@@ -206,13 +210,13 @@ Tests build every record they need. Nothing depends on data a developer happened
 
 ## Optional features
 
-Three of five extended features shipped:
+All five extended features shipped:
 
+- Vendor self-service registration and status lookup at `/vendor-register` and `/vendor-status`
+- ERPNext Supplier Scorecard integration through a Custom Scorecard Variable
+- Vendor analytics dashboard
 - Bulk vendor import from CSV, processed through `frappe.enqueue`
 - Supplier comparison matrix on the Purchase Order form
-- Vendor analytics dashboard
-
-Not built: the vendor self-service web pages, and ERPNext Supplier Scorecard integration.
 
 ---
 
@@ -263,9 +267,6 @@ What this app does not do, and what would break it.
   number to collide with.
 - **Bank details are not carried to the created Supplier.** ERPNext holds supplier banking in a
   separate Bank Account document, so mapping them means creating a second record.
-- **"Low rating" has four definitions.** The Purchase Invoice banner and the print format
-  hardcode 3, the Supplier form reads `low_rating_threshold` from settings, and the rating badge
-  carries its own constant. Three of the four are specified values; they are not reconciled.
 - **Purchase order pricing comparison uses `grand_total` in document currency.** A supplier
   billed in two currencies would have unrelated amounts averaged together. `base_grand_total`
   would fix it; the dashboard and reports already use it.
@@ -274,8 +275,7 @@ What this app does not do, and what would break it.
   which exists in both the controller and the form script — a client check that asks the server
   whether a value is valid is not a client check.
 - **The duplicate-GST check is a read-then-write with no lock.** Two simultaneous submissions of
-  the same number would both pass. Closing it needs a unique index, which the field's optionality
-  complicates.
+  the same number would both pass. Closing it needs a unique index, which the field's optionality complicates.
 - **The comment-mining patch skips negations rather than parsing them.** "Not late for once"
   matches "late", so any comment containing a negation is counted and skipped. A visible gap beats
   a plausible-looking score nobody can trace.
@@ -287,8 +287,16 @@ What this app does not do, and what would break it.
   doctype it links to, transitively — a walk that reaches `Payment Gateway`, which no longer
   exists, and fails before any test runs.
 - **Field-level permissions on Supplier are not implemented.** Frappe offers nothing short of
-  permission levels, and introducing those on a core ERPNext DocType is a large change for a small
-  gain.
+  permission levels, and introducing those on a core ERPNext DocType is a large change for a small gain.
+- **The scorecard variable depends on an import in `__init__.py`.** ERPNext resolves a variable's
+  Python path with `__import__` on the first segment and `getattr` for the rest, and `getattr`
+  does not trigger a submodule import — so `vendor_portal/__init__.py` imports the scorecard
+  module for the sole purpose of making it reachable. Removing that line makes every scorecard
+  period score zero, silently, because the function swallows its own failures.
+- **The scorecard mean is unweighted.** A supplier's overall rating weights by type; the scorecard
+  variable averages every rating in the period equally, because a period may contain one type and
+  renormalising across that sample would produce a meaningless number. The two figures differ by
+  design.
 
 ---
 
