@@ -236,6 +236,9 @@ scheduler_events = {
     "hourly": [
 		"vendor_portal.tasks.rate_pending_deliveries",
 	],
+    "weekly": [
+		"vendor_portal.tasks.send_performance_digest",
+	],
 }
 
 # Testing

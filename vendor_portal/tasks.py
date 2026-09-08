@@ -12,6 +12,7 @@ work is already done before doing it.
 import frappe
 from frappe import _
 from frappe.utils import flt
+from frappe.utils import add_days, flt, fmt_money, getdate, today
 
 from vendor_portal.utils import rating_field_to_scale, recalculate_vendor_rating
 from vendor_portal.overrides.purchase_receipt import create_delivery_rating
@@ -230,3 +231,285 @@ def _get_unrated_receipts() -> list[str]:
 		{"limit": DELIVERY_BATCH_SIZE},
 	)
 
+
+# How many suppliers appear in each ranking. Enough to see the shape of the
+# distribution without turning a summary into a report.
+DIGEST_RANK_SIZE = 5
+
+# The window the digest covers, counted back from the day it runs rather than
+# to a calendar boundary — so a digest triggered by hand covers the same seven
+# days as one the scheduler fires.
+DIGEST_PERIOD_DAYS = 7
+
+
+def send_performance_digest():
+	"""Email the weekly vendor performance summary to vendor managers.
+
+	A thin wrapper: everything that decides what the digest says lives in
+	build_performance_digest, which returns a string and touches no mail
+	server. That split is what lets the content be inspected on a site with no
+	email account configured, and it keeps the figures reusable by anything
+	else that wants them.
+	"""
+	recipients = _get_vendor_manager_emails()
+
+	if not recipients:
+		# Nobody holds the role. Not a failure — a site can legitimately have
+		# no vendor managers yet, and logging it as an error every week would
+		# be noise.
+		return
+
+	try:
+		frappe.sendmail(
+			recipients=recipients,
+			subject=_("Vendor performance digest: week ending {0}").format(
+				frappe.format(getdate(today()), {"fieldtype": "Date"})
+			),
+			message=build_performance_digest(),
+		)
+	except Exception:
+		frappe.log_error(
+			title="Vendor performance digest failed",
+			message=frappe.get_traceback(),
+		)
+
+
+def build_performance_digest() -> str:
+	"""Assemble the weekly digest as HTML.
+
+	Returns:
+		The digest body. Sections with nothing to report say so rather than
+		rendering an empty table, so a quiet week produces a readable email
+		rather than a page of headings over nothing.
+	"""
+	from_date = add_days(today(), -DIGEST_PERIOD_DAYS)
+	to_date = today()
+
+	rated = _get_rated_suppliers()
+	orders = _get_period_order_summary(from_date, to_date)
+	onboardings = _get_period_onboardings(from_date, to_date)
+	underperforming = _get_underperforming_suppliers()
+
+	period = _("{0} to {1}").format(
+		frappe.format(getdate(from_date), {"fieldtype": "Date"}),
+		frappe.format(getdate(to_date), {"fieldtype": "Date"}),
+	)
+
+	sections = [
+		f"<h2>{_('Vendor performance digest')}</h2>",
+		f"<p>{_('Period')}: {period}</p>",
+		f"""<p>{_('Purchase orders placed')}: <b>{orders['count']}</b>
+			&nbsp;·&nbsp; {_('Total value')}: <b>{fmt_money(orders['value'])}</b></p>""",
+		_render_ranking(
+			_("Top {0} vendors by rating").format(DIGEST_RANK_SIZE),
+			rated[:DIGEST_RANK_SIZE],
+		),
+		_render_ranking(
+			_("Lowest {0} vendors by rating").format(DIGEST_RANK_SIZE),
+			list(reversed(rated))[:DIGEST_RANK_SIZE],
+		),
+		_render_underperforming(underperforming),
+		_render_onboardings(onboardings),
+		f"<p><i>{_('Rankings cover the {0} suppliers with at least one rating.').format(len(rated))}</i></p>",
+	]
+
+	return "".join(sections)
+
+
+def _get_rated_suppliers() -> list[dict]:
+	"""Return suppliers holding at least one rating, best first.
+
+	Unrated suppliers are excluded rather than sorted to the bottom: a vendor
+	nobody has scored is not the worst performer, and listing it as one would
+	send managers chasing the wrong problem.
+
+	Reads the cached score on Supplier rather than aggregating the log, since
+	the daily job keeps it current and the digest is a weekly summary — a
+	rating submitted since last night is not worth a second aggregate.
+
+	Returns:
+		Supplier name, rating on the 1-5 scale, and rating count.
+	"""
+	rows = frappe.db.sql(
+		"""
+		SELECT name, custom_vendor_rating, custom_total_rating_count
+		FROM `tabSupplier`
+		WHERE COALESCE(disabled, 0) = 0
+			AND COALESCE(custom_total_rating_count, 0) > 0
+		ORDER BY custom_vendor_rating DESC
+		""",
+		as_dict=True,
+	)
+
+	return [
+		{
+			"supplier": row.name,
+			"rating": rating_field_to_scale(row.custom_vendor_rating),
+			"count": int(row.custom_total_rating_count or 0),
+		}
+		for row in rows
+	]
+
+
+def _get_period_order_summary(from_date: str, to_date: str) -> dict:
+	"""Count and total the purchase orders placed in the period.
+
+	Args:
+		from_date: Start of the window, inclusive.
+		to_date: End of the window, inclusive.
+
+	Returns:
+		count and value, the latter in company currency.
+	"""
+	result = frappe.db.sql(
+		"""
+		SELECT COUNT(*) AS order_count, COALESCE(SUM(base_grand_total), 0) AS order_value
+		FROM `tabPurchase Order`
+		WHERE docstatus = 1
+			AND transaction_date BETWEEN %(from_date)s AND %(to_date)s
+		""",
+		{"from_date": from_date, "to_date": to_date},
+		as_dict=True,
+	)
+
+	row = result[0] if result else {}
+
+	return {
+		"count": int(row.get("order_count") or 0),
+		"value": flt(row.get("order_value")),
+	}
+
+
+def _get_period_onboardings(from_date: str, to_date: str) -> list[dict]:
+	"""Return the applications submitted in the period.
+
+	Args:
+		from_date: Start of the window, inclusive.
+		to_date: End of the window, inclusive.
+
+	Returns:
+		Application name, supplier name and current status.
+	"""
+	return frappe.db.sql(
+		"""
+		SELECT name, supplier_name, onboarding_status
+		FROM `tabVendor Onboarding`
+		WHERE docstatus != 2
+			AND DATE(creation) BETWEEN %(from_date)s AND %(to_date)s
+		ORDER BY creation DESC
+		""",
+		{"from_date": from_date, "to_date": to_date},
+		as_dict=True,
+	)
+
+
+def _get_underperforming_suppliers() -> list[dict]:
+	"""Return every rated supplier currently below the configured threshold.
+
+	Not truncated to a top five: this is the section a manager acts on, and
+	hiding the sixth-worst vendor because five others were worse defeats the
+	purpose.
+
+	Returns:
+		Supplier name and rating on the 1-5 scale, worst first.
+	"""
+	threshold = flt(
+		frappe.db.get_single_value("Vendor Portal Settings", "low_rating_threshold")
+	)
+
+	if not threshold:
+		return []
+
+	rows = frappe.db.sql(
+		"""
+		SELECT name, custom_vendor_rating
+		FROM `tabSupplier`
+		WHERE COALESCE(disabled, 0) = 0
+			AND COALESCE(custom_total_rating_count, 0) > 0
+			AND custom_vendor_rating < %(threshold)s
+		ORDER BY custom_vendor_rating ASC
+		""",
+		{"threshold": threshold / 5.0},
+		as_dict=True,
+	)
+
+	return [
+		{"supplier": row.name, "rating": rating_field_to_scale(row.custom_vendor_rating)}
+		for row in rows
+	]
+
+
+def _render_ranking(heading: str, suppliers: list[dict]) -> str:
+	"""Render a supplier ranking as an HTML table.
+
+	Args:
+		heading: The section heading.
+		suppliers: Rows to render.
+
+	Returns:
+		An HTML fragment, or a short note when there is nothing to rank.
+	"""
+	if not suppliers:
+		return f"<h3>{heading}</h3><p>{_('No rated suppliers yet.')}</p>"
+
+	rows = "".join(
+		f"""<tr>
+			<td>{frappe.utils.escape_html(row['supplier'])}</td>
+			<td>{round(row['rating'], 2)}</td>
+			<td>{row['count']}</td>
+		</tr>"""
+		for row in suppliers
+	)
+
+	return f"""
+		<h3>{heading}</h3>
+		<table border="1" cellpadding="6" cellspacing="0">
+			<tr><th>{_('Supplier')}</th><th>{_('Rating')}</th><th>{_('Ratings')}</th></tr>
+			{rows}
+		</table>"""
+
+
+def _render_underperforming(suppliers: list[dict]) -> str:
+	"""Render the below-threshold list.
+
+	Args:
+		suppliers: Rows to render.
+
+	Returns:
+		An HTML fragment, or a note that nothing is below threshold.
+	"""
+	heading = _("Vendors below the rating threshold")
+
+	if not suppliers:
+		return f"<h3>{heading}</h3><p>{_('No vendors are currently below threshold.')}</p>"
+
+	rows = "".join(
+		f"""<tr>
+			<td>{frappe.utils.escape_html(row['supplier'])}</td>
+			<td>{round(row['rating'], 2)}</td>
+		</tr>"""
+		for row in suppliers
+	)
+
+	return f"""
+		<h3>{heading}</h3>
+		<table border="1" cellpadding="6" cellspacing="0">
+			<tr><th>{_('Supplier')}</th><th>{_('Rating')}</th></tr>
+			{rows}
+		</table>"""
+
+
+def _render_onboardings(applications: list[dict]) -> str:
+	"""Render the applications submitted in the period.
+
+	Args:
+		applications: Rows to render.
+
+	Returns:
+		An HTML fragment, or a note that none arrived.
+	"""
+	heading = _("New vendor applications")
+
+	if not applications:
+
+		
