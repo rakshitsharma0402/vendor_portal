@@ -36,6 +36,7 @@
   "onboarding_status",
   "reviewed_by",
   "review_date",
+  "last_reminded_on",
   "review_cb",
   "linked_supplier",
   "rejection_reason",
@@ -231,13 +232,20 @@
    "options": "Vendor Onboarding",
    "print_hide": 1,
    "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "last_reminded_on",
+   "fieldtype": "Date",
+   "label": "Last Reminded On",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-09-08 00:35:43.836978",
+ "modified": "2026-09-08 14:16:35.429418",
  "modified_by": "Administrator",
  "module": "Vendor Portal",
  "name": "Vendor Onboarding",

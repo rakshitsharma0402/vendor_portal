@@ -13,6 +13,8 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 from frappe.utils import add_days, flt, fmt_money, getdate, today
+from frappe.model.workflow import apply_workflow
+from frappe.utils import add_days, date_diff, flt, fmt_money, getdate, today
 
 from vendor_portal.utils import rating_field_to_scale, recalculate_vendor_rating
 from vendor_portal.overrides.purchase_receipt import create_delivery_rating
@@ -511,5 +513,161 @@ def _render_onboardings(applications: list[dict]) -> str:
 	heading = _("New vendor applications")
 
 	if not applications:
+		return f"<h3>{heading}</h3><p>{_('No applications were submitted this period.')}</p>"
 
-		
+	rows = "".join(
+		f"""<tr>
+			<td>{frappe.utils.escape_html(row.name)}</td>
+			<td>{frappe.utils.escape_html(row.supplier_name or '')}</td>
+			<td>{frappe.utils.escape_html(_(row.onboarding_status or ''))}</td>
+		</tr>"""
+		for row in applications
+	)
+
+	return f"""
+		<h3>{heading}</h3>
+		<table border="1" cellpadding="6" cellspacing="0">
+			<tr><th>{_('Application')}</th><th>{_('Vendor')}</th><th>{_('Status')}</th></tr>
+			{rows}
+		</table>"""
+
+
+# Days in Under Review before a reviewer is chased, and before the
+# application is closed on their behalf.
+ONBOARDING_REMINDER_DAYS = 7
+ONBOARDING_EXPIRY_DAYS = 14
+
+AUTO_REJECT_REASON = "Auto-rejected: Review period expired."
+
+
+def expire_stale_onboardings():
+	"""Chase stale applications, and close the ones nobody ever decided.
+
+	A vendor waiting on a review should either get one or be told it will not
+	happen. Left alone, an unreviewed application blocks the vendor
+	indefinitely and quietly inflates the pipeline every report reads from.
+
+	Rejection is checked before the reminder: an application at fifteen days
+	has passed both thresholds, and mailing a reminder about a record the same
+	run is about to close would be incoherent.
+	"""
+	for application in _get_stale_onboardings():
+		try:
+			age = date_diff(today(), getdate(application.creation))
+
+			if age > ONBOARDING_EXPIRY_DAYS:
+				_auto_reject(application.name)
+			elif age > ONBOARDING_REMINDER_DAYS:
+				_remind_reviewers(application, age)
+
+			frappe.db.commit()
+
+		except Exception:
+			frappe.log_error(
+				title="Stale onboarding expiry failed",
+				message=f"Application: {application.name}\n\n{frappe.get_traceback()}",
+			)
+
+
+def _get_stale_onboardings() -> list[dict]:
+	"""Return applications still awaiting a decision past the reminder age.
+
+	Age is measured from creation rather than from the moment the application
+	entered review: nothing records that transition, and an application
+	normally reaches Under Review on submission. A draft that sat unsubmitted
+	for weeks would be judged older than its review actually is — recorded as
+	an assumption rather than solved with another timestamp field.
+
+	Returns:
+		Name, creation date, supplier name and last reminder date.
+	"""
+	cutoff = add_days(today(), -ONBOARDING_REMINDER_DAYS)
+
+	return frappe.db.sql(
+		"""
+		SELECT name, creation, supplier_name, last_reminded_on
+		FROM `tabVendor Onboarding`
+		WHERE onboarding_status = 'Under Review'
+			AND docstatus = 1
+			AND DATE(creation) < %(cutoff)s
+		ORDER BY creation ASC
+		""",
+		{"cutoff": cutoff},
+		as_dict=True,
+	)
+
+
+def _remind_reviewers(application, age: int):
+	"""Nudge vendor managers about an application still awaiting a decision.
+
+	Records the date so the same application is not chased again tomorrow.
+	Without that, a reviewer on holiday returns to seven identical emails and
+	learns to ignore all of them.
+
+	Args:
+		application: The stale application row.
+		age: How many days old it is.
+	"""
+	if application.last_reminded_on:
+		days_since_reminder = date_diff(today(), getdate(application.last_reminded_on))
+
+		if days_since_reminder < ONBOARDING_REMINDER_DAYS:
+			return
+
+	recipients = _get_vendor_manager_emails()
+
+	if not recipients:
+		return
+
+	# Written before the mail is attempted: a reminder that was sent but not
+	# recorded would be sent again tomorrow, which is the failure this field
+	# exists to prevent. A recorded reminder that failed to send is chased
+	# again in a week, which is survivable.
+	frappe.db.set_value(
+		"Vendor Onboarding", application.name, "last_reminded_on", today(), update_modified=False
+	)
+
+	try:
+		frappe.sendmail(
+			recipients=recipients,
+			subject=_("Vendor application awaiting review: {0}").format(application.name),
+			message=_(
+				"{0} from {1} has been under review for {2} days. "
+				"It will be automatically rejected after {3} days."
+			).format(
+				application.name,
+				application.supplier_name or _("an applicant"),
+				age,
+				ONBOARDING_EXPIRY_DAYS,
+			),
+			reference_doctype="Vendor Onboarding",
+			reference_name=application.name,
+		)
+	except Exception:
+		frappe.log_error(
+			title="Onboarding reminder failed",
+			message=f"Application: {application.name}\n\n{frappe.get_traceback()}",
+		)
+
+
+def _auto_reject(name: str):
+	"""Close an application nobody decided on.
+
+	Driven through the workflow rather than by writing the status, so the
+	workflow state and the field cannot drift apart, and so the document's own
+	reaction to entering Rejected still runs — including the check that a
+	rejection carries a reason.
+
+	The reason is written first for that reason: the document refuses to enter
+	Rejected without one.
+
+	Args:
+		name: Name of the Vendor Onboarding record.
+	"""
+	doc = frappe.get_doc("Vendor Onboarding", name)
+
+	doc.db_set("rejection_reason", _(AUTO_REJECT_REASON))
+	doc.reload()
+
+	apply_workflow(doc, "Reject")
+
