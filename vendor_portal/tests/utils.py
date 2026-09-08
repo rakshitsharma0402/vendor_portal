@@ -170,3 +170,148 @@ def before_tests():
 	make_test_user("test_purchase_user@example.com", ["Purchase User", "Purchase Team"])
 
 	frappe.db.commit()
+
+
+def get_test_company() -> str:
+	"""Return the company the tests transact against.
+
+	ERPNext's own test bootstrap creates one; this reads whichever exists
+	rather than naming it, so the suite does not break when ERPNext renames
+	its fixture.
+
+	Returns:
+		A company name.
+	"""
+	return frappe.db.get_value("Company", {}, "name")
+
+
+def get_test_warehouse() -> str:
+	"""Return a warehouse orders can be received into.
+
+	Returns:
+		A non-group warehouse belonging to the test company.
+	"""
+	return frappe.db.get_value(
+		"Warehouse", {"company": get_test_company(), "is_group": 0}, "name"
+	)
+
+
+def make_item(**overrides) -> "frappe.Document":
+	"""Create a stock item.
+
+	Stock is maintained because a Purchase Receipt cannot be submitted for an
+	item that is not stocked, and the receipt tests need one.
+
+	Args:
+		**overrides: Field values replacing the defaults.
+
+	Returns:
+		The inserted Item.
+	"""
+	values = {
+		"doctype": "Item",
+		"item_code": f"TEST-ITEM-{frappe.generate_hash(length=6)}",
+		"item_group": frappe.db.get_value("Item Group", {"is_group": 0}, "name"),
+		"stock_uom": "Nos",
+		"is_stock_item": 1,
+	}
+
+	values.update(overrides)
+
+	doc = frappe.get_doc(values)
+	doc.insert(ignore_permissions=True)
+
+	return doc
+
+
+def make_purchase_order(supplier: str, submit: bool = True, **overrides):
+	"""Create a purchase order for a supplier.
+
+	Args:
+		supplier: The supplier to order from.
+		submit: Whether to submit it. The blacklist and rating gates fire at
+			validate, so tests for those pass False and expect the save itself
+			to raise.
+		**overrides: Field values replacing the defaults, including `qty` and
+			`rate` for the single item row.
+
+	Returns:
+		The purchase order, submitted or not.
+	"""
+	qty = overrides.pop("qty", 10)
+	rate = overrides.pop("rate", 100)
+	item_code = overrides.pop("item_code", None) or make_item().item_code
+	schedule_date = overrides.pop("schedule_date", add_days(today(), 14))
+
+	values = {
+		"doctype": "Purchase Order",
+		"supplier": supplier,
+		"company": get_test_company(),
+		"transaction_date": today(),
+		"schedule_date": schedule_date,
+		"items": [
+			{
+				"item_code": item_code,
+				"qty": qty,
+				"rate": rate,
+				"schedule_date": schedule_date,
+				"warehouse": get_test_warehouse(),
+			}
+		],
+	}
+
+	values.update(overrides)
+
+	doc = frappe.get_doc(values)
+	doc.insert(ignore_permissions=True)
+
+	if submit:
+		doc.submit()
+
+	return doc
+
+
+def make_purchase_receipt(purchase_order, received_qty: float | None = None, submit: bool = True):
+	"""Create a receipt against a submitted purchase order.
+
+	Built from the order's own items rather than fresh ones, so the receipt
+	carries `purchase_order_item` — without which the short-delivery check has
+	nothing to compare against and silently passes.
+
+	Args:
+		purchase_order: The submitted order to receive.
+		received_qty: Quantity to accept. Defaults to the full ordered
+			quantity.
+		submit: Whether to submit the receipt.
+
+	Returns:
+		The purchase receipt.
+	"""
+	item = purchase_order.items[0]
+
+	doc = frappe.get_doc(
+		{
+			"doctype": "Purchase Receipt",
+			"supplier": purchase_order.supplier,
+			"company": purchase_order.company,
+			"posting_date": today(),
+			"items": [
+				{
+					"item_code": item.item_code,
+					"qty": received_qty if received_qty is not None else item.qty,
+					"rate": item.rate,
+					"warehouse": item.warehouse,
+					"purchase_order": purchase_order.name,
+					"purchase_order_item": item.name,
+				}
+			],
+		}
+	)
+
+	doc.insert(ignore_permissions=True)
+
+	if submit:
+		doc.submit()
+
+	return doc
+
