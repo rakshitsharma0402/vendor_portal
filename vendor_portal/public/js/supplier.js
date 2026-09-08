@@ -8,6 +8,12 @@
 
 const RATING_SCALE_MAX = 5;
 
+// The score below which the rating badge is tinted. Matches the default
+// low_rating_threshold in Vendor Portal Settings; the authoritative check is
+// the headline indicator, which reads the setting itself.
+
+const LOW_RATING_BADGE_THRESHOLD = 2.5;
+
 frappe.ui.form.on("Supplier", {
 	refresh: function (frm) {
 		if (frm.is_new()) {
@@ -61,10 +67,15 @@ function rating_label(data) {
 	// An unrated vendor is not a badly rated one, and 0.00/5 would read as
 	// the worst possible score rather than as an absence of data.
 	if (!data.avg_rating) {
-		return __("Not yet rated");
+		return `<span class="vendor-portal-rating-badge">${__("Not yet rated")}</span>`;
 	}
 
-	return `${flt(data.avg_rating, 2)}/5`;
+	// The low modifier is applied from the same figure the indicator uses, so
+	// the badge and the headline alert cannot disagree.
+	const low = data.avg_rating < LOW_RATING_BADGE_THRESHOLD;
+	const modifier = low ? " vendor-portal-rating-badge--low" : "";
+
+	return `<span class="vendor-portal-rating-badge${modifier}">${flt(data.avg_rating, 2)}/5</span>`;
 }
 
 function render_low_rating_indicator(frm) {

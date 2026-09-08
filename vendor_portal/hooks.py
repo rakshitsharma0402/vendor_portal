@@ -40,7 +40,15 @@ required_apps = ["erpnext"]
 # include js, css files in header of desk.html
 # app_include_css = "/assets/vendor_portal/css/vendor_portal.css"
 # app_include_js = "/assets/vendor_portal/js/vendor_portal.js"
+
+# --- Desk assets -------------------------------------------------------
+# app_include_js carries the form scripts, which must load on every desk page.
+# The Purchase Order list override is registered separately because
+# app_include_js loads before ERPNext's own per-doctype list script, which
+# would then assign over it.
+
 app_include_js = "vendor_portal.bundle.js"
+
 app_include_css = "vendor_portal.bundle.css"
 
 # include js, css files in header of web template
@@ -105,8 +113,13 @@ doctype_list_js = {"Purchase Order": "public/js/purchase_order_list.js"}
 # 	"methods": "vendor_portal.utils.jinja_methods",
 # 	"filters": "vendor_portal.utils.jinja_filters"
 # }
+
+# Templates get the star filter and nothing else. Registering `utils` here
+# would expose every public callable in it, including the rating
+# recalculation, which writes to the database — not a capability a print
+# format should have.
 jinja = {
-	"filters": ["vendor_portal.utils"],
+	"filters": ["vendor_portal.jinja_filters"],
 }
 
 # Installation
@@ -182,6 +195,12 @@ jinja = {
 # has_permission = {
 # 	"Event": "frappe.desk.doctype.event.event.has_permission",
 # }
+
+# --- Row-level access --------------------------------------------------
+# Role permissions decide what a user may do to a doctype; these decide which
+# records. Applied by the framework to every list, report and get_all at once,
+# so an API call is restricted the same way the list view is.
+
 permission_query_conditions = {
 	"Vendor Onboarding": "vendor_portal.permissions.vendor_onboarding_query",
 }
@@ -189,6 +208,7 @@ permission_query_conditions = {
 has_permission = {
 	"Vendor Rating Log": "vendor_portal.permissions.vendor_rating_log_permission",
 }
+
 
 # Document Events
 # ---------------
@@ -229,17 +249,23 @@ doc_events = {
 # 		"vendor_portal.tasks.monthly"
 # 	],
 # }
+
+# --- Scheduled work ----------------------------------------------------
+# Every job here is safe to run twice: each recomputes from source or checks
+# whether its work is already done. cron takes a dict of expressions rather
+# than a list, unlike the named intervals above it.
+
 scheduler_events = {
 	"daily": [
 		"vendor_portal.tasks.recalculate_all_vendor_ratings",
 	],
-    "hourly": [
+	"hourly": [
 		"vendor_portal.tasks.rate_pending_deliveries",
 	],
-    "weekly": [
+	"weekly": [
 		"vendor_portal.tasks.send_performance_digest",
 	],
-    "cron": {
+	"cron": {
 		"0 9 * * *": [
 			"vendor_portal.tasks.expire_stale_onboardings",
 		],
@@ -272,6 +298,14 @@ scheduler_events = {
 # override_doctype_dashboards = {
 # 	"Task": "vendor_portal.task.get_dashboard_data"
 # }
+
+# --- ERPNext behaviour -------------------------------------------------
+# Deep controller changes go through override_doctype_class; cross-cutting
+# observations go through doc_events. The Purchase Order rules decide whether
+# an order is valid at all, so they belong inside the controller. A delivery
+# rating is an observation about an event the receipt happens to record, and
+# is additive — removing it would not change what a Purchase Receipt is.
+
 override_doctype_class = {
 	"Purchase Order": "vendor_portal.overrides.purchase_order.CustomPurchaseOrder"
 }
