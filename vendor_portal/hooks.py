@@ -239,6 +239,11 @@ scheduler_events = {
     "weekly": [
 		"vendor_portal.tasks.send_performance_digest",
 	],
+    "cron": {
+		"0 9 * * *": [
+			"vendor_portal.tasks.expire_stale_onboardings",
+		],
+	},
 }
 
 # Testing

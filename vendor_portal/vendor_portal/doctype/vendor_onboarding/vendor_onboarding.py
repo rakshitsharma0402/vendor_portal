@@ -62,6 +62,7 @@ class VendorOnboarding(Document):
 		email: DF.Data
 		gst_number: DF.Data | None
 		ifsc_code: DF.Data | None
+		last_reminded_on: DF.Date | None
 		linked_supplier: DF.Link | None
 		naming_series: DF.Literal["VOB-.YYYY.-.#####"]
 		onboarding_status: DF.Literal["Draft", "Under Review", "Approved", "Rejected"]
