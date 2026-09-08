@@ -1,0 +1,107 @@
+{#
+	Purchase order with the vendor's standing alongside the order itself.
+
+	The supplier's rating and category are fetched here rather than carried on
+	the Purchase Order: they live on Supplier, and a print format reaching
+	related data through frappe.db.get_value is the normal way of it.
+
+	Styles are inline because Frappe's PDF renderer does not load the desk
+	stylesheet — the badge rules here duplicate vendor_portal.bundle.css
+	rather than sharing it, which is unavoidable for print output.
+#}
+
+{% set vendor = frappe.db.get_value(
+	"Supplier",
+	doc.supplier,
+	["custom_vendor_category", "custom_vendor_rating", "custom_total_rating_count"],
+	as_dict=True,
+) or {} %}
+
+{% set rated = vendor.get("custom_total_rating_count") %}
+{% set rating_out_of_five = (vendor.get("custom_vendor_rating") or 0) * 5 %}
+
+<style>
+	.vp-header { border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 16px; }
+	.vp-brand { float: right; font-size: 11px; color: #888; letter-spacing: 1px; }
+	.vp-standing { background: #f7f7f7; padding: 10px 12px; margin-bottom: 16px; border-radius: 4px; }
+	.vp-badge { display: inline-block; padding: 2px 10px; border-radius: 10px; background: #e8e8e8; font-size: 12px; }
+	.vp-stars { font-size: 15px; letter-spacing: 2px; }
+	.vp-unrated { color: #888; font-style: italic; }
+	.vp-caution { border-left: 3px solid #b94a48; background: #fdf3f2; color: #b94a48; padding: 8px 12px; margin-bottom: 16px; font-weight: bold; }
+	.vp-items { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+	.vp-items th, .vp-items td { border: 1px solid #ddd; padding: 6px 8px; font-size: 12px; }
+	.vp-items th { background: #f2f2f2; text-align: left; }
+	.vp-right { text-align: right; }
+	.vp-total { font-size: 14px; font-weight: bold; text-align: right; }
+</style>
+
+<div class="vp-header">
+	<span class="vp-brand">VENDOR PORTAL</span>
+	<h3>{{ _("Purchase Order") }} — {{ doc.name }}</h3>
+</div>
+
+<div class="vp-standing">
+	<b>{{ doc.supplier_name or doc.supplier }}</b>
+
+	{% if vendor.get("custom_vendor_category") %}
+		<span class="vp-badge">{{ vendor.get("custom_vendor_category") }}</span>
+	{% endif %}
+
+	<div style="margin-top: 6px;">
+		{% if rated %}
+			{#
+				Rendered through the star filter rather than as a number: a
+				printed order is read at a glance, and "3.4" invites a
+				question that ★★★☆☆ answers.
+			#}
+			<span class="vp-stars">{{ vendor.get("custom_vendor_rating") | star_rating }}</span>
+			<span>{{ "%.1f"|format(rating_out_of_five) }}/5 {{ _("from") }} {{ rated }} {{ _("ratings") }}</span>
+		{% else %}
+			{#
+				Not the same as five empty stars. An unrated vendor has no
+				score; showing ☆☆☆☆☆ would print a new supplier as the worst
+				one on the ledger.
+			#}
+			<span class="vp-unrated">{{ _("Not yet rated") }}</span>
+		{% endif %}
+	</div>
+</div>
+
+{% if rated and rating_out_of_five < 3 %}
+	<div class="vp-caution">{{ _("Caution: Low-rated vendor") }}</div>
+{% endif %}
+
+<table class="vp-items">
+	<tr>
+		<td><b>{{ _("Date") }}</b>: {{ frappe.format(doc.transaction_date, {"fieldtype": "Date"}) }}</td>
+		<td><b>{{ _("Required By") }}</b>: {{ frappe.format(doc.schedule_date, {"fieldtype": "Date"}) }}</td>
+	</tr>
+</table>
+
+<table class="vp-items">
+	<thead>
+		<tr>
+			<th>{{ _("Item") }}</th>
+			<th>{{ _("Description") }}</th>
+			<th class="vp-right">{{ _("Qty") }}</th>
+			<th class="vp-right">{{ _("Rate") }}</th>
+			<th class="vp-right">{{ _("Amount") }}</th>
+		</tr>
+	</thead>
+	<tbody>
+		{% for item in doc.items %}
+			<tr>
+				<td>{{ item.item_code }}</td>
+				<td>{{ item.item_name }}</td>
+				<td class="vp-right">{{ item.qty }}</td>
+				<td class="vp-right">{{ frappe.format_value(item.rate, {"fieldtype": "Currency"}, doc) }}</td>
+				<td class="vp-right">{{ frappe.format_value(item.amount, {"fieldtype": "Currency"}, doc) }}</td>
+			</tr>
+		{% endfor %}
+	</tbody>
+</table>
+
+<div class="vp-total">
+	{{ _("Grand Total") }}: {{ frappe.format_value(doc.grand_total, {"fieldtype": "Currency"}, doc) }}
+</div>
+
