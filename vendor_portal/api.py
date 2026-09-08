@@ -9,6 +9,8 @@ what "total order value" means happens in one place.
 """
 
 import frappe
+import csv
+import io
 from frappe import _
 from frappe.utils import cint, flt
 from vendor_portal.utils import (
@@ -584,3 +586,204 @@ def set_supplier_blacklist(
 		frappe.log_error(title="Supplier blacklist update failed")
 		raise
 
+
+# Fields a row must carry to become an application worth reviewing. Anything
+# beyond these is optional and passed through if the header names it.
+BULK_IMPORT_REQUIRED_FIELDS = (
+	"supplier_name",
+	"company_name",
+	"email",
+	"phone",
+	"vendor_category",
+)
+
+# Rows beyond this are refused rather than queued. A file this large is more
+# likely a mistake — a full supplier export pasted in by accident — than an
+# intended import, and finding out after the job has run is expensive.
+BULK_IMPORT_MAX_ROWS = 1000
+
+
+@frappe.whitelist()
+def bulk_import_vendors(csv_content: str) -> dict:
+	"""Queue a CSV of vendors for import as draft applications.
+
+	Returns as soon as the file is understood rather than when the import
+	finishes: a thousand rows would otherwise hold the request open long
+	enough to time out. What the caller learns immediately is whether the file
+	is usable; what happened to each row arrives by email.
+
+	Args:
+		csv_content: The file's contents, header row first.
+
+	Returns:
+		How many rows were queued.
+
+	Raises:
+		frappe.PermissionError: If the caller holds no deciding role.
+		frappe.ValidationError: If the file is empty, missing required
+			headers, or larger than the row limit.
+	"""
+	try:
+		if not set(DECISION_ROLES) & set(frappe.get_roles()):
+			frappe.throw(
+				_("Only a Purchase Manager can import vendors."),
+				frappe.PermissionError,
+				title=_("Not Permitted"),
+			)
+
+		rows = _parse_vendor_csv(csv_content)
+
+		frappe.enqueue(
+			"vendor_portal.api.import_vendor_rows",
+			queue="long",
+			rows=rows,
+			requested_by=frappe.session.user,
+		)
+
+		return {"queued": len(rows)}
+
+	except Exception:
+		frappe.log_error(
+			title="Bulk vendor import failed",
+			message=frappe.get_traceback(),
+		)
+		raise
+
+
+def _parse_vendor_csv(csv_content: str) -> list[dict]:
+	"""Read the CSV and confirm it can be imported at all.
+
+	Structural problems are caught here, in the request, so the caller is told
+	at once. Row-level problems are left to the worker: a single malformed GST
+	should not stop the other nine hundred rows.
+
+	Args:
+		csv_content: The file's contents, header row first.
+
+	Returns:
+		One dict per row, carrying its line number for reporting.
+
+	Raises:
+		frappe.ValidationError: If the file is empty, missing required
+			headers, or too large.
+	"""
+	if not (csv_content or "").strip():
+		frappe.throw(_("The file is empty."), title=_("Nothing to Import"))
+
+	reader = csv.DictReader(io.StringIO(csv_content))
+
+	headers = {(field or "").strip() for field in (reader.fieldnames or [])}
+	missing = [field for field in BULK_IMPORT_REQUIRED_FIELDS if field not in headers]
+
+	if missing:
+		frappe.throw(
+			_("The file is missing these columns: {0}").format(", ".join(missing)),
+			title=_("Missing Columns"),
+		)
+
+	rows = []
+
+	for line_number, row in enumerate(reader, start=2):
+		# Blank lines are skipped rather than reported: a trailing newline is
+		# not a mistake anyone needs telling about.
+		if not any((value or "").strip() for value in row.values()):
+			continue
+
+		cleaned = {
+			key.strip(): (value or "").strip()
+			for key, value in row.items()
+			if key and (value or "").strip()
+		}
+
+		cleaned["_line"] = line_number
+		rows.append(cleaned)
+
+	if not rows:
+		frappe.throw(_("The file has a header but no rows."), title=_("Nothing to Import"))
+
+	if len(rows) > BULK_IMPORT_MAX_ROWS:
+		frappe.throw(
+			_("The file has {0} rows; at most {1} can be imported at once.").format(
+				len(rows), BULK_IMPORT_MAX_ROWS
+			),
+			title=_("Too Many Rows"),
+		)
+
+	return rows
+
+
+def import_vendor_rows(rows: list[dict], requested_by: str):
+	"""Create a draft application for each row, reporting what failed.
+
+	Applications are left unsubmitted. Submitting runs the duplicate-GST check
+	and the minimum-document rule, which an imported row will usually fail
+	because it carries no attachments — a reviewer should see the batch,
+	complete it, and submit deliberately.
+
+	Committed per row so a job killed at row four hundred leaves three hundred
+	and ninety-nine applications rather than none.
+
+	Args:
+		rows: Parsed rows, each carrying its line number as `_line`.
+		requested_by: Who asked for the import, and who hears how it went.
+	"""
+	created = []
+	failed = []
+
+	for row in rows:
+		line = row.pop("_line", None)
+
+		try:
+			doc = frappe.get_doc({"doctype": "Vendor Onboarding", **row})
+			doc.insert(ignore_permissions=True)
+
+			frappe.db.commit()
+
+			created.append(doc.name)
+
+		except Exception as exception:
+			# Rolled back to the last commit so a half-written row does not
+			# poison the rows that follow it.
+			frappe.db.rollback()
+
+			failed.append((line, str(exception)))
+
+	_report_import(created, failed, requested_by)
+
+
+def _report_import(created: list[str], failed: list[tuple], requested_by: str):
+	"""Tell the requester what the import did.
+
+	The caller disconnected the moment the job was queued, so the outcome has
+	to reach them some other way. Logged as well as emailed: mail can be
+	unconfigured, and a record of what a batch import created is worth keeping
+	regardless.
+
+	Args:
+		created: Names of the applications created.
+		failed: Line number and reason for each row that did not import.
+		requested_by: Who to tell.
+	"""
+	lines = [f"Created {len(created)} draft application{'' if len(created) == 1 else 's'}."]
+
+	if failed:
+		lines.append(f"\n{len(failed)} row{'' if len(failed) == 1 else 's'} failed:")
+		lines.extend(f"  Line {line}: {reason}" for line, reason in failed)
+
+	message = "\n".join(lines)
+
+	frappe.log_error(title="Bulk vendor import completed", message=message)
+
+	try:
+		frappe.sendmail(
+			recipients=[requested_by],
+			subject=_("Vendor import finished: {0} created, {1} failed").format(
+				len(created), len(failed)
+			),
+			message=f"<pre>{frappe.utils.escape_html(message)}</pre>",
+		)
+	except Exception:
+		frappe.log_error(
+			title="Bulk vendor import notification failed",
+			message=frappe.get_traceback(),
+		)
