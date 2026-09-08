@@ -494,9 +494,11 @@ def _notify_applicant(doc, approved: bool):
 			message=message,
 			reference_doctype=doc.doctype,
 			reference_name=doc.name,
-			queue=True,
 		)
 	except Exception:
-		frappe.log_error(title="Vendor onboarding notification failed")
+		frappe.log_error(
+			title="Vendor onboarding notification failed",
+			message=f"Application: {doc.name}\n\n{frappe.get_traceback()}",
+		)
 
 		

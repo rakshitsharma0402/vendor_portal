@@ -143,12 +143,12 @@ def _alert_if_newly_underperforming(supplier, previous, result, threshold):
 			).format(supplier, round(new_rating, 2), threshold),
 			reference_doctype="Supplier",
 			reference_name=supplier,
-			queue=True,
 		)
 	except Exception:
-		# The rating is already correct and committed. A mail server that is
-		# down must not undo a night's reconciliation.
-		frappe.log_error(title="Low rating alert failed", message=f"Supplier: {supplier}")
+		frappe.log_error(
+			title="Low rating alert failed",
+			message=f"Supplier: {supplier}\n\n{frappe.get_traceback()}",
+		)
 
 
 def _get_vendor_manager_emails() -> list[str]:
