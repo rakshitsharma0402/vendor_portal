@@ -168,9 +168,25 @@ def create_delivery_rating(doc):
 	lines is one poor delivery, not five, and scoring per line would let a
 	large receipt swamp the supplier's average.
 
+	Returns without acting if this receipt already carries a delivery rating.
+	The guard lives here rather than in the callers so both are covered — the
+	submit hook, and the hourly job that backfills receipts the hook never saw.
+	It also means an amended receipt cannot double-rate its supplier.
+
 	Args:
 		doc: The submitted Purchase Receipt.
+
+	Returns:
+		The name of the rating created, or None when one already existed.
 	"""
+	existing = frappe.db.exists(
+		"Vendor Rating Log",
+		{"purchase_receipt": doc.name, "rating_type": "Delivery"},
+	)
+
+	if existing:
+		return None
+
 	short = bool(get_short_delivered_items(doc))
 	late = is_late(doc)
 
@@ -197,5 +213,7 @@ def create_delivery_rating(doc):
 	# The receiving clerk has authority over the receipt, not over rating
 	# records; the rating is the system's observation, not theirs.
 	rating.insert(ignore_permissions=True)
+
+	return rating.name
 
     

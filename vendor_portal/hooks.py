@@ -233,6 +233,9 @@ scheduler_events = {
 	"daily": [
 		"vendor_portal.tasks.recalculate_all_vendor_ratings",
 	],
+    "hourly": [
+		"vendor_portal.tasks.rate_pending_deliveries",
+	],
 }
 
 # Testing
