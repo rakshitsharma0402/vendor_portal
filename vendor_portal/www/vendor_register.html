@@ -1,0 +1,115 @@
+{% extends "templates/web.html" %}
+
+{% block page_content %}
+<div class="container" style="max-width: 720px; margin-top: 32px;">
+	<h2>{{ _("Register as a vendor") }}</h2>
+	<p class="text-muted">
+		{{ _("Submit your details and we will review your application. You will receive a reference to check its status.") }}
+	</p>
+
+	<div id="vp-result" style="display: none;" class="alert alert-success"></div>
+	<div id="vp-error" style="display: none;" class="alert alert-danger"></div>
+
+	<form id="vp-register-form">
+		<h5 style="margin-top: 24px;">{{ _("About you") }}</h5>
+
+		<div class="form-group">
+			<label>{{ _("Contact Name") }} *</label>
+			<input type="text" class="form-control" name="supplier_name" required>
+		</div>
+
+		<div class="form-group">
+			<label>{{ _("Company Name") }} *</label>
+			<input type="text" class="form-control" name="company_name" required>
+		</div>
+
+		<div class="form-group">
+			<label>{{ _("Email") }} *</label>
+			<input type="email" class="form-control" name="email" required>
+		</div>
+
+		<div class="form-group">
+			<label>{{ _("Phone") }} *</label>
+			<input type="text" class="form-control" name="phone" required>
+		</div>
+
+		<div class="form-group">
+			<label>{{ _("Category") }} *</label>
+			<select class="form-control" name="vendor_category" required>
+				<option value="">{{ _("Select a category") }}</option>
+				{% for category in vendor_categories %}
+					<option value="{{ category.name }}">{{ category.name }}</option>
+				{% endfor %}
+			</select>
+		</div>
+
+		<h5 style="margin-top: 24px;">{{ _("Registration") }}</h5>
+
+		<div class="form-group">
+			<label>{{ _("GST Number") }}</label>
+			<input type="text" class="form-control" name="gst_number">
+		</div>
+
+		<div class="form-group">
+			<label>{{ _("PAN Number") }}</label>
+			<input type="text" class="form-control" name="pan_number">
+		</div>
+
+		<h5 style="margin-top: 24px;">{{ _("Address") }}</h5>
+
+		<div class="form-group">
+			<label>{{ _("Address") }} *</label>
+			<input type="text" class="form-control" name="address_line_1" required>
+		</div>
+
+		<div class="form-group">
+			<label>{{ _("City") }} *</label>
+			<input type="text" class="form-control" name="city" required>
+		</div>
+
+		<div class="form-group">
+			<label>{{ _("State") }} *</label>
+			<input type="text" class="form-control" name="state" required>
+		</div>
+
+		<div class="form-group">
+			<label>{{ _("Pincode") }}</label>
+			<input type="text" class="form-control" name="pincode">
+		</div>
+
+		<button type="submit" class="btn btn-primary" style="margin-top: 16px;">
+			{{ _("Submit application") }}
+		</button>
+	</form>
+</div>
+
+<script>
+	document.getElementById("vp-register-form").addEventListener("submit", function (event) {
+		event.preventDefault();
+
+		const form = event.target;
+		const args = {};
+
+		new FormData(form).forEach((value, key) => {
+			args[key] = value;
+		});
+
+		frappe.call({
+			method: "vendor_portal.www.vendor_register.submit_application",
+			args: args,
+			callback: function (response) {
+				if (!response.message) {
+					return;
+				}
+
+				form.style.display = "none";
+
+				const result = document.getElementById("vp-result");
+				result.textContent = response.message.message;
+				result.style.display = "block";
+			},
+		});
+	});
+</script>
+{% endblock %}
+
