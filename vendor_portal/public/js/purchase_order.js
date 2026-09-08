@@ -126,7 +126,17 @@ function add_rating_actions(frm) {
 		__("Actions")
 	);
 
-	// Rating an order that has not been placed is rating a hypothetical.
+	// Only while the supplier can still be changed. After submit a comparison
+	// is a curiosity rather than a decision, and offering it implies the order
+	// can still be moved.
+	if (frm.doc.docstatus === 0 && (frm.doc.items || []).length) {
+		frm.add_custom_button(
+			__("Compare Suppliers"),
+			() => show_comparison_matrix(frm),
+			__("Actions")
+		);
+	}
+
 	if (frm.doc.docstatus === 1) {
 		frm.add_custom_button(
 			__("Rate This Supplier"),
@@ -263,5 +273,119 @@ function submit_rating(frm, dialog, values) {
 			render_vendor_standing(frm);
 		},
 	});
+}
+
+function show_comparison_matrix(frm) {
+	// Opens on the item already on the order rather than an empty picker: the
+	// buyer has the line in front of them, and making them retype it turns a
+	// tool into a form.
+	const first_item = frm.doc.items[0];
+
+	const dialog = new frappe.ui.Dialog({
+		title: __("Compare suppliers"),
+		size: "extra-large",
+		fields: [
+			{
+				fieldname: "item_code",
+				label: __("Item"),
+				fieldtype: "Link",
+				options: "Item",
+				default: first_item.item_code,
+				reqd: 1,
+				onchange: function () {
+					load_comparison(frm, dialog);
+				},
+			},
+			{ fieldtype: "HTML", fieldname: "comparison" },
+		],
+	});
+
+	dialog.show();
+
+	load_comparison(frm, dialog);
+}
+
+function load_comparison(frm, dialog) {
+	const item_code = dialog.get_value("item_code");
+
+	if (!item_code) {
+		return;
+	}
+
+	// The quantity on the matching order line, so estimated cost answers
+	// "what would this order cost from them" rather than pricing one unit
+	// nobody is buying.
+	const line = (frm.doc.items || []).find((row) => row.item_code === item_code);
+	const qty = line ? line.qty : 1;
+
+	frappe.call({
+		method: "vendor_portal.api.get_supplier_comparison",
+		args: { item_code: item_code, qty: qty },
+		freeze: true,
+		freeze_message: __("Comparing suppliers..."),
+		callback: function (response) {
+			dialog.fields_dict.comparison.$wrapper.html(
+				build_comparison_html(response.message || [], frm.doc.supplier, qty)
+			);
+		},
+	});
+}
+
+function build_comparison_html(rows, current_supplier, qty) {
+	if (!rows.length) {
+		return `<p class="text-muted">${__(
+			"No supplier has been ordered this item before."
+		)}</p>`;
+	}
+
+	const body = rows
+		.map((row) => {
+			const is_current = row.supplier === current_supplier;
+
+			// The supplier already on the order is marked so a buyer can see
+			// where their current choice sits rather than hunting for it.
+			const marker = is_current
+				? ` <span class="text-muted">(${__("on this order")})</span>`
+				: "";
+
+			// A null delivery score means the supplier has never been rated on
+			// delivery. Rendering 0.00 would place them below a vendor who has
+			// genuinely failed.
+			const delivery =
+				row.delivery_score === null || row.delivery_score === undefined
+					? "—"
+					: flt(row.delivery_score, 2);
+
+			return `
+				<tr${is_current ? ' style="background: var(--gray-50);"' : ""}>
+					<td>${frappe.utils.escape_html(row.supplier_name || row.supplier)}${marker}</td>
+					<td class="text-right">${format_currency(row.last_rate)}</td>
+					<td class="text-right">${format_currency(row.avg_rate)}</td>
+					<td class="text-right">${flt(row.total_supplied_qty, 2)}</td>
+					<td class="text-right">${format_currency(row.estimated_cost)}</td>
+					<td class="text-right">${flt(row.vendor_rating, 2)}/5</td>
+					<td class="text-right">${delivery}</td>
+				</tr>`;
+		})
+		.join("");
+
+	return `
+		<p class="text-muted">${__("Estimated cost is for {0} units, ordered best-rated first.", [
+			qty,
+		])}</p>
+		<table class="table table-bordered">
+			<thead>
+				<tr>
+					<th>${__("Supplier")}</th>
+					<th class="text-right">${__("Last Rate")}</th>
+					<th class="text-right">${__("Avg Rate")}</th>
+					<th class="text-right">${__("Supplied Qty")}</th>
+					<th class="text-right">${__("Est. Cost")}</th>
+					<th class="text-right">${__("Rating")}</th>
+					<th class="text-right">${__("Delivery")}</th>
+				</tr>
+			</thead>
+			<tbody>${body}</tbody>
+		</table>`;
 }
 
