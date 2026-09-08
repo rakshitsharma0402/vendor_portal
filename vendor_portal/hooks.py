@@ -434,5 +434,13 @@ fixtures = [
 		"dt": "Role",
 		"filters": [["name", "in", ["Vendor Manager", "Purchase Team"]]],
 	},
+    {
+		"dt": "Supplier Scorecard Variable",
+		"filters": [["name", "in", ["Vendor Portal Rating"]]],
+	},
+	{
+		"dt": "Supplier Scorecard Criteria",
+		"filters": [["name", "in", ["Vendor Portal Rating"]]],
+	},
 ]
 
