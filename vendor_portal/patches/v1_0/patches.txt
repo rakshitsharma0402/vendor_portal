@@ -1,0 +1,2 @@
+[post_model_sync]
+vendor_portal.patches.v1_0.populate_vendor_category_on_suppliers
