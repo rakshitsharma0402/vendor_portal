@@ -1,0 +1,12 @@
+[
+ {
+  "criteria_name": "Vendor Portal Rating",
+  "docstatus": 0,
+  "doctype": "Supplier Scorecard Criteria",
+  "formula": "{vendor_portal_rating} * 20",
+  "max_score": 100.0,
+  "modified": "2026-09-09 01:45:27.895772",
+  "name": "Vendor Portal Rating",
+  "weight": 100.0
+ }
+]
