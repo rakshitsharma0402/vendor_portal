@@ -12,6 +12,7 @@ Onboarding, which would also open it to the REST API.
 
 import frappe
 from frappe import _
+from frappe.rate_limiter import rate_limit
 
 # Fields an applicant may set. An allowlist rather than a denylist: a denylist
 # needs updating every time a field is added to the doctype, and the cost of
@@ -54,7 +55,7 @@ def get_context(context):
 
 
 @frappe.whitelist(allow_guest=True)
-@frappe.rate_limit(limit=5, seconds=60 * 60)
+@rate_limit(limit=5, seconds=60 * 60)
 def submit_application(**kwargs) -> dict:
 	"""Create a draft application from a public submission.
 

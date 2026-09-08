@@ -11,6 +11,7 @@ difference between the two responses confirms which applications exist.
 
 import frappe
 from frappe import _
+from frappe.rate_limiter import rate_limit
 
 no_cache = 1
 
@@ -25,7 +26,7 @@ def get_context(context):
 
 
 @frappe.whitelist(allow_guest=True)
-@frappe.rate_limit(limit=20, seconds=60 * 60)
+@rate_limit(limit=20, seconds=60 * 60)
 def check_status(application: str, email: str) -> dict:
 	"""Return an application's status to whoever submitted it.
 
