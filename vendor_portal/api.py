@@ -468,7 +468,7 @@ def get_onboarding_status_summary() -> dict:
 		list rather than nulls, so a widget can render without guarding.
 	"""
 	try:
-		rows = frappe.get_all(
+		rows = frappe.get_list(
 			"Vendor Onboarding",
 			# Cancelled applications keep whatever status they held, so
 			# without this a cancelled review sits in the pending count
@@ -488,7 +488,7 @@ def get_onboarding_status_summary() -> dict:
 			if status in counts:
 				counts[status] += 1
 
-		recent = frappe.get_all(
+		recent = frappe.get_list(
 			"Vendor Onboarding",
 			filters={"docstatus": ("!=", 2)},
 			fields=[

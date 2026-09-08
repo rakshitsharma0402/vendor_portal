@@ -50,9 +50,37 @@ class VendorRatingLog(Document):
 
 		Raises:
 			frappe.ValidationError: If the score falls outside 1-5.
+			frappe.PermissionError: If a non-manager edits another user's log.
 		"""
+		self.validate_author()
 		self.validate_score_range()
 
+	def validate_author(self):
+		"""Refuse edits to a rating somebody else recorded.
+
+		Enforced here as well as through the has_permission hook: the hook
+		narrows list and read access, but does not reliably gate a save for a
+		user who already holds write permission on the doctype. A rule that
+		only sometimes applies is not a rule.
+
+		Raises:
+			frappe.PermissionError: If the caller is not the author and holds
+				no managing role.
+		"""
+		if self.is_new():
+			return
+
+		from vendor_portal.permissions import has_manager_access
+
+		if has_manager_access():
+			return
+
+		if self.rated_by and self.rated_by != frappe.session.user:
+			frappe.throw(
+				_("You can only edit ratings you recorded."),
+				frappe.PermissionError,
+				title=_("Not Permitted"),
+			)
 
 	def validate_score_range(self):
 		"""Reject scores outside the 1-5 scale.

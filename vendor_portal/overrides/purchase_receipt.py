@@ -43,12 +43,13 @@ def validate(doc, method=None):
 
 	doc.flags.has_short_delivery = True
 
-	doc.add_comment(
-		"Comment",
-		_("Short delivery on {0}: received less than {1}% of the ordered quantity.").format(
-			", ".join(short_items), int(SHORT_DELIVERY_THRESHOLD * 100)
-		),
-	)
+	if not doc.is_new():
+		doc.add_comment(
+			"Comment",
+			_("Short delivery on {0}: received less than {1}% of the ordered quantity.").format(
+				", ".join(short_items), int(SHORT_DELIVERY_THRESHOLD * 100)
+			),
+		)
 
 
 def on_submit(doc, method=None):

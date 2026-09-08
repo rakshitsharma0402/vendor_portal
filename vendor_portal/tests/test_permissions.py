@@ -139,23 +139,22 @@ class IntegrationTestVendorPortalPermissions(IntegrationTestCase):
 		self.assertIn(theirs.name, visible)
 
 	def test_summary_endpoint_respects_row_level_filter(self):
-		"""The pipeline summary counts only what the caller may see.
-
-		VP-2.3.4 was written through the ORM specifically so the row-level
-		condition would apply to it. This is the test of that claim — and it
-		fails if the endpoint uses frappe.get_all, which bypasses permissions
-		by design.
-		"""
+		"""The pipeline summary counts only what the caller may see."""
 		from vendor_portal.api import get_onboarding_status_summary
 
 		frappe.set_user("Administrator")
-		make_onboarding(supplier_name="Owned By Administrator")
+		theirs = make_onboarding(supplier_name="Owned By Administrator")
 
 		frappe.set_user(PURCHASE_USER)
-		make_onboarding(supplier_name="Owned By Purchase User")
+		mine = make_onboarding(supplier_name="Owned By Purchase User")
 
 		summary = get_onboarding_status_summary()
+		names = [row["name"] for row in summary["recent_submissions"]]
 
-		self.assertEqual(summary["total_applications"], 1)
+		# Asserted by membership rather than by count: applications created by
+		# earlier tests in this class survive the rollback, so an absolute
+		# number would depend on execution order.
+		self.assertIn(mine.name, names)
+		self.assertNotIn(theirs.name, names)
 
         
