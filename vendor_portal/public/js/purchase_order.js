@@ -102,13 +102,14 @@ function show_blacklist_banner(frm, info) {
 
 	const reason = info.custom_blacklist_reason || __("no reason recorded");
 
-	// A warning, not a gate. The Purchase Order controller refuses the save
+		// A warning, not a gate. The Purchase Order controller refuses the save
 	// server-side; hiding or disabling Save here would leave the buyer with a
 	// form that does nothing and no explanation of why.
 	frm.dashboard.add_comment(
-		__("WARNING: This supplier is blacklisted! Reason: {0}", [
-			frappe.utils.escape_html(reason),
-		]),
+		`<div class="vendor-portal-blacklist-banner">${__(
+			"WARNING: This supplier is blacklisted! Reason: {0}",
+			[frappe.utils.escape_html(reason)]
+		)}</div>`,
 		"red",
 		true
 	);
