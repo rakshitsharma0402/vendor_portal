@@ -229,6 +229,11 @@ doc_events = {
 # 		"vendor_portal.tasks.monthly"
 # 	],
 # }
+scheduler_events = {
+	"daily": [
+		"vendor_portal.tasks.recalculate_all_vendor_ratings",
+	],
+}
 
 # Testing
 # -------

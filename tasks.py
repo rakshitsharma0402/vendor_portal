@@ -96,3 +96,76 @@ def _get_suppliers_to_recalculate() -> list[str]:
 
 	return list(dict.fromkeys([*rated, *stale]))
 
+
+def _alert_if_newly_underperforming(supplier, previous, result, threshold):
+	"""Email vendor managers when a supplier drops below the threshold.
+
+	Only on the crossing. A vendor that has been underperforming for months is
+	already known, and mailing about it every night trains the recipients to
+	ignore the alert entirely — at which point the one that matters is missed
+	too. The weekly digest is where standing problems are listed.
+
+	Args:
+		supplier: Name of the Supplier.
+		previous: Its stored rating and count before recalculation.
+		result: What recalculate_vendor_rating returned.
+		threshold: The score below which a vendor is underperforming.
+	"""
+	if not threshold:
+		return
+
+	new_rating = flt(result.get("rating"))
+
+	if not result.get("rating_count") or new_rating >= threshold:
+		return
+
+	# A supplier with no previous ratings has not crossed anything — it has
+	# arrived. Treated as a crossing so a vendor whose first ratings are poor
+	# is not silently accepted.
+	previous_rating = rating_field_to_scale(previous.get("custom_vendor_rating"))
+	had_ratings = bool(previous.get("custom_total_rating_count"))
+
+	if had_ratings and previous_rating < threshold:
+		return
+
+	recipients = _get_vendor_manager_emails()
+
+	if not recipients:
+		return
+
+	try:
+		frappe.sendmail(
+			recipients=recipients,
+			subject=_("Vendor rating below threshold: {0}").format(supplier),
+			message=_(
+				"{0} has dropped to {1} out of 5, below the threshold of {2}. "
+				"Purchase orders for this vendor may now be blocked."
+			).format(supplier, round(new_rating, 2), threshold),
+			reference_doctype="Supplier",
+			reference_name=supplier,
+			queue=True,
+		)
+	except Exception:
+		# The rating is already correct and committed. A mail server that is
+		# down must not undo a night's reconciliation.
+		frappe.log_error(title="Low rating alert failed", message=f"Supplier: {supplier}")
+
+
+def _get_vendor_manager_emails() -> list[str]:
+	"""Return the addresses of every enabled user holding the Vendor Manager role.
+
+	Returns:
+		Email addresses, without duplicates.
+	"""
+	return frappe.db.sql_list(
+		"""
+		SELECT DISTINCT u.name
+		FROM `tabUser` u
+		INNER JOIN `tabHas Role` r ON r.parent = u.name
+		WHERE r.role = %(role)s
+			AND u.enabled = 1
+			AND u.name NOT IN ('Administrator', 'Guest')
+		""",
+		{"role": "Vendor Manager"},
+	)
+
