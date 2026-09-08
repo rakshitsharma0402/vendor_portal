@@ -276,6 +276,7 @@ scheduler_events = {
 # -------
 
 # before_tests = "vendor_portal.install.before_tests"
+before_tests = "vendor_portal.tests.utils.before_tests"
 
 # Extend DocType Class
 # ------------------------------
