@@ -29,8 +29,10 @@ GROUP_TO_CATEGORY = {
 	"Office Supplies": "Office Supplies",
 	"Stationery": "Office Supplies",
 	"Logistics": "Logistics",
-	"Distributor": "Raw Materials",
+	"Distributor": "Logistics",
 	"Local": "Office Supplies",
+	"Pharmaceutical": "Raw Materials",
+	"Electrical": "IT Services",
 }
 
 
