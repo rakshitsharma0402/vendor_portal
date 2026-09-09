@@ -436,3 +436,8 @@ fixtures = [
 	},
 ]
 
+website_route_rules = [
+	{"from_route": "/vendor-register", "to_route": "vendor_register"},
+	{"from_route": "/vendor-status", "to_route": "vendor_status"},
+]
+
