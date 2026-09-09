@@ -1,4 +1,0 @@
-[post_model_sync]
-vendor_portal.patches.v1_0.populate_vendor_category_on_suppliers
-vendor_portal.patches.v1_0.recalculate_vendor_ratings
-vendor_portal.patches.v1_0.migrate_supplier_notes_to_rating_logs
